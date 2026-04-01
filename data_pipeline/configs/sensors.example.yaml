@@ -1,0 +1,27 @@
+sensors:
+  /spark/cameras/lightning/wrist_1:
+    serial_number: "WRIST-REALSENSE-SERIAL"
+
+  /spark/cameras/thunder/wrist_1:
+    serial_number: "THUNDER-WRIST-REALSENSE-SERIAL"
+
+  /spark/cameras/world/scene_1:
+    serial_number: "SCENE-1-REALSENSE-SERIAL"
+
+  /spark/cameras/world/scene_2:
+    serial_number: "SCENE-2-REALSENSE-SERIAL"
+
+  /spark/cameras/world/scene_3:
+    serial_number: "SCENE-3-REALSENSE-SERIAL"
+
+  /spark/tactile/lightning/finger_left:
+    serial_number: "LIGHTNING-GELSIGHT-LEFT-SERIAL"
+
+  /spark/tactile/lightning/finger_right:
+    serial_number: "LIGHTNING-GELSIGHT-RIGHT-SERIAL"
+
+  /spark/tactile/thunder/finger_left:
+    serial_number: "THUNDER-GELSIGHT-LEFT-SERIAL"
+
+  /spark/tactile/thunder/finger_right:
+    serial_number: "THUNDER-GELSIGHT-RIGHT-SERIAL"

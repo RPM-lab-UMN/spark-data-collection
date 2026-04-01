@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# ROS / colcon
+build/
+install/
+log/
+*.bag
+*.db3
+*.mcap
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Project artifacts
+*.stl
+raw_episodes/
+published/
+.operator_console/
+data_pipeline/configs/*.local.yaml
+data_pipeline/configs/*.local.json
+
+# Local upstream checkouts used for reference/integration work
+lerobot/
+realsense-ros/
+librealsense/
+librealsense-v2.54.2/
+gsrobotics/
+raiden/

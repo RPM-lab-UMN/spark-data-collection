@@ -1,0 +1,8 @@
+presets:
+  default:
+    active_arms: "lightning"
+    conversion_profile: "data_pipeline/configs/multisensor_20hz.yaml"
+    task_name: "pick_place"
+    language_instruction: ""
+    operator: "spark"
+    session_devices: []

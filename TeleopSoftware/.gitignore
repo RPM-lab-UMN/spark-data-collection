@@ -1,0 +1,10 @@
+# __pycache__
+__pycache__/
+*.bag
+*.h5
+*.gz
+*.pickle
+!Spark/offsets_lightning.pickle
+!Spark/offsets_thunder.pickle
+*.tar
+*.tar.gz

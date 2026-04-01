@@ -1,0 +1,1270 @@
+#!/usr/bin/env python3
+
+from __future__ import annotations
+
+import os
+import signal
+import socket
+import sys
+from pathlib import Path
+
+try:
+    from PySide6.QtCore import QSocketNotifier, QTimer, Qt
+    from PySide6.QtWidgets import (
+        QAbstractItemView,
+        QApplication,
+        QCheckBox,
+        QComboBox,
+        QFileDialog,
+        QFormLayout,
+        QFrame,
+        QGridLayout,
+        QGroupBox,
+        QHBoxLayout,
+        QInputDialog,
+        QLabel,
+        QLineEdit,
+        QMainWindow,
+        QPushButton,
+        QPlainTextEdit,
+        QScrollArea,
+        QSizePolicy,
+        QSplitter,
+        QTableWidget,
+        QTableWidgetItem,
+        QVBoxLayout,
+        QWidget,
+    )
+except ModuleNotFoundError as exc:  # pragma: no cover - runtime guard only
+    print(
+        "PySide6 is not installed. Activate .venv and run: "
+        "pip install -r data_pipeline/requirements-operator-console.txt",
+        file=sys.stderr,
+    )
+    raise SystemExit(1) from exc
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from data_pipeline.operator_console_backend import OperatorConsoleBackend
+from data_pipeline.pipeline_utils import (
+    camera_path_parts_for_sensor_key,
+    canonical_sensor_key,
+    load_optional_sensor_overrides,
+    tactile_path_parts_for_sensor_key,
+)
+
+
+STATUS_STYLES = {
+    "green": "background:#d7f2df;color:#15371e;border:1px solid #8ab79a;",
+    "yellow": "background:#fff3c4;color:#5b4a06;border:1px solid #d8c670;",
+    "red": "background:#f8d6d6;color:#5b1818;border:1px solid #d39b9b;",
+    "off": "background:#eceff2;color:#495057;border:1px solid #cbd3db;",
+    "info": "background:#e7eef8;color:#29415f;border:1px solid #c3d3ea;",
+}
+CUSTOM_SENSOR_KEY_LABEL = "Custom..."
+
+def _device_identifier(device: dict[str, object]) -> str:
+    return (
+        str(device.get("serial_number", "")).strip()
+        or str(device.get("device_path", "")).strip()
+    )
+
+def apply_chip_style(label: QLabel, tone: str) -> None:
+    label.setStyleSheet(
+        STATUS_STYLES.get(tone, STATUS_STYLES["off"]) + "border-radius:10px;padding:5px 10px;font-weight:600;"
+    )
+
+
+def card_status_text(status: str, summary: str) -> tuple[str, str]:
+    lowered = summary.lower()
+    if status == "green":
+        return "Healthy", "green"
+    if status == "red":
+        return "Failed", "red"
+    if status == "off":
+        return "Idle", "off"
+    if "starting" in lowered:
+        return "Starting", "yellow"
+    if "static" in lowered:
+        return "Static", "yellow"
+    if "ready" in lowered:
+        return "Ready", "yellow"
+    if "complete" in lowered:
+        return "Complete", "yellow"
+    if "running" in lowered:
+        return "Running", "yellow"
+    return "Attention", "yellow"
+
+
+class HealthCard(QFrame):
+    def __init__(self, title: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("healthCard")
+        self.setFrameShape(QFrame.Shape.StyledPanel)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(6)
+
+        title_row = QHBoxLayout()
+        title_row.setContentsMargins(0, 0, 0, 0)
+        self.title_label = QLabel(title)
+        self.title_label.setObjectName("cardTitle")
+        title_row.addWidget(self.title_label)
+        title_row.addStretch(1)
+        self.status_chip = QLabel("Idle")
+        self.status_chip.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.status_chip.setMinimumWidth(92)
+        apply_chip_style(self.status_chip, "off")
+        title_row.addWidget(self.status_chip)
+        layout.addLayout(title_row)
+
+        self.summary_label = QLabel("Unknown")
+        self.summary_label.setWordWrap(True)
+        self.summary_label.setObjectName("cardSummary")
+        layout.addWidget(self.summary_label)
+
+        self.details_label = QLabel("")
+        self.details_label.setWordWrap(True)
+        self.details_label.setObjectName("cardDetails")
+        layout.addWidget(self.details_label)
+
+        button_row = QHBoxLayout()
+        button_row.setContentsMargins(0, 2, 0, 0)
+        button_row.setSpacing(6)
+        self.primary_button = QPushButton("Start")
+        self.secondary_button = QPushButton("Stop")
+        button_row.addWidget(self.primary_button)
+        button_row.addWidget(self.secondary_button)
+        layout.addLayout(button_row)
+
+    def set_status(self, status: str, summary: str, details: list[str]) -> None:
+        chip_text, chip_tone = card_status_text(status, summary)
+        self.status_chip.setText(chip_text)
+        apply_chip_style(self.status_chip, chip_tone)
+        self.summary_label.setText(summary)
+        self.details_label.setText("\n".join(details) if details else "")
+
+
+class OperatorConsoleQtWindow(QMainWindow):
+    def __init__(self) -> None:
+        super().__init__()
+        self.backend = OperatorConsoleBackend()
+        self.setWindowTitle("Operator Console")
+        self.resize(1820, 1040)
+
+        self.last_log_render = ""
+        self.last_output_render = ""
+        self.notes_target_episode_id = ""
+        self.published_target_last_saved = ""
+
+        self.form_widgets: dict[str, QLineEdit | QComboBox | QCheckBox] = {}
+        self.health_cards: dict[str, HealthCard] = {}
+
+        self._build_ui()
+        self._apply_styles()
+        self._load_defaults()
+
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self._tick)
+        self.timer.start(1000)
+        self._tick()
+
+    def _build_ui(self) -> None:
+        central = QWidget()
+        root_layout = QVBoxLayout(central)
+        root_layout.setContentsMargins(18, 18, 18, 18)
+        root_layout.setSpacing(12)
+        self.setCentralWidget(central)
+
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.setChildrenCollapsible(False)
+        root_layout.addWidget(splitter, 1)
+
+        left_panel = QWidget()
+        left_layout = QVBoxLayout(left_panel)
+        left_layout.setContentsMargins(2, 2, 2, 2)
+        left_layout.setSpacing(12)
+        left_layout.addWidget(self._make_scroll_area(self._build_form_panel()), 1)
+        splitter.addWidget(left_panel)
+
+        center_panel = QWidget()
+        center_layout = QVBoxLayout(center_panel)
+        center_layout.setContentsMargins(2, 2, 2, 2)
+        center_layout.setSpacing(12)
+        center_layout.addWidget(self._make_scroll_area(self._build_health_panel()), 1)
+        splitter.addWidget(center_panel)
+
+        right_panel = QWidget()
+        right_layout = QVBoxLayout(right_panel)
+        right_layout.setContentsMargins(2, 2, 2, 2)
+        right_layout.setSpacing(12)
+        right_layout.addWidget(self._build_command_panel())
+        right_layout.addWidget(self._build_logs_panel(), 3)
+        right_layout.addWidget(self._build_output_panel(), 2)
+        splitter.addWidget(right_panel)
+
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 0)
+        splitter.setStretchFactor(2, 1)
+        splitter.setSizes([560, 520, 720])
+
+    def _make_scroll_area(self, widget: QWidget) -> QScrollArea:
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setWidget(widget)
+        return scroll
+
+    def _build_form_panel(self) -> QWidget:
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 4, 0, 6)
+        layout.setSpacing(12)
+
+        layout.addWidget(self._build_task_box())
+        layout.addWidget(self._build_sensor_box())
+        layout.addWidget(self._build_session_actions_box())
+        layout.addWidget(self._build_artifacts_box())
+        layout.addStretch(1)
+        return container
+
+    def _build_task_box(self) -> QWidget:
+        box = QGroupBox("Session Metadata")
+        form = QFormLayout(box)
+        form.setSpacing(10)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
+        form.setFormAlignment(Qt.AlignmentFlag.AlignTop)
+
+        presets_row = QWidget()
+        presets_layout = QHBoxLayout(presets_row)
+        presets_layout.setContentsMargins(0, 0, 0, 0)
+        presets_layout.setSpacing(8)
+        self.presets_file_edit = QLineEdit(self.backend.get_default_presets_file())
+        self.presets_file_edit.setPlaceholderText("operator console presets YAML")
+        self.presets_file_edit.returnPressed.connect(self._load_selected_preset_file)
+        self.browse_profile_button = QPushButton("Browse")
+        self.browse_profile_button.clicked.connect(self._browse_preset_file)
+        self.save_profile_button = QPushButton("Save As")
+        self.save_profile_button.clicked.connect(self._save_selected_preset_file)
+        presets_layout.addWidget(self.presets_file_edit, 1)
+        presets_layout.addWidget(self.browse_profile_button)
+        presets_layout.addWidget(self.save_profile_button)
+        form.addRow("Presets File", presets_row)
+
+        self.form_widgets["task_name"] = QLineEdit()
+        self.form_widgets["language_instruction"] = QLineEdit()
+        self.form_widgets["operator"] = QLineEdit(os.environ.get("USER", ""))
+        active_arms = QComboBox()
+        active_arms.addItems(["lightning", "thunder", "lightning,thunder"])
+        self.form_widgets["active_arms"] = active_arms
+
+        for label, key in [
+            ("Task Name", "task_name"),
+            ("Language Instruction (Optional)", "language_instruction"),
+            ("Operator", "operator"),
+            ("Active Arms", "active_arms"),
+        ]:
+            form.addRow(label, self.form_widgets[key])
+
+        self.config_file_status = QLabel("")
+        self.config_file_status.setWordWrap(True)
+        form.addRow("", self.config_file_status)
+        return box
+
+    def _build_sensor_box(self) -> QWidget:
+        box = QGroupBox("Discovered Devices")
+        layout = QVBoxLayout(box)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(8)
+
+        form = QFormLayout()
+        form.setSpacing(10)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
+        form.setFormAlignment(Qt.AlignmentFlag.AlignTop)
+        sensors_file_row = QWidget()
+        sensors_file_layout = QHBoxLayout(sensors_file_row)
+        sensors_file_layout.setContentsMargins(0, 0, 0, 0)
+        sensors_file_layout.setSpacing(8)
+        self.form_widgets["sensors_file"] = QLineEdit(self.backend.get_default_sensors_file())
+        self.browse_sensors_button = QPushButton("Browse")
+        self.browse_sensors_button.clicked.connect(self._browse_sensors_file)
+        self.save_sensors_button = QPushButton("Save As")
+        self.save_sensors_button.clicked.connect(self._save_selected_sensors_file)
+        self.form_widgets["sensors_file"].editingFinished.connect(self._load_selected_sensors_file)
+        sensors_file_layout.addWidget(self.form_widgets["sensors_file"], 1)
+        sensors_file_layout.addWidget(self.browse_sensors_button)
+        sensors_file_layout.addWidget(self.save_sensors_button)
+        form.addRow("Sensors File", sensors_file_row)
+        layout.addLayout(form)
+
+        self.session_devices_table = QTableWidget(0, 4)
+        self.session_devices_table.setHorizontalHeaderLabels(["Record", "Device", "Hardware ID", "Sensor Key"])
+        self.session_devices_table.verticalHeader().setVisible(False)
+        self.session_devices_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.session_devices_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.session_devices_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.session_devices_table.horizontalHeader().setStretchLastSection(True)
+        self.session_devices_table.setColumnWidth(0, 64)
+        self.session_devices_table.setColumnWidth(1, 92)
+        self.session_devices_table.setColumnWidth(2, 240)
+        layout.addWidget(self.session_devices_table)
+
+        controls = QHBoxLayout()
+        controls.setContentsMargins(0, 0, 0, 0)
+        controls.setSpacing(8)
+        self.discover_devices_button = QPushButton("Discover Devices")
+        self.discover_devices_button.clicked.connect(self._discover_session_devices)
+        controls.addWidget(self.discover_devices_button)
+        controls.addStretch(1)
+        layout.addLayout(controls)
+        return box
+
+    def _sensor_inventory(self) -> dict[str, dict[str, object]]:
+        sensors_file = str(self._get_field("sensors_file")).strip()
+        if not sensors_file:
+            return {}
+        candidate = Path(sensors_file).expanduser()
+        if not candidate.is_absolute():
+            candidate = (REPO_ROOT / candidate).resolve()
+        if not candidate.exists():
+            return {}
+        try:
+            return load_optional_sensor_overrides(candidate)
+        except Exception:
+            return {}
+
+    def _sensor_key_choices_for_kind(self, kind: str) -> list[str]:
+        choices: list[str] = []
+        for sensor_key in self._sensor_inventory():
+            if kind == "realsense" and camera_path_parts_for_sensor_key(sensor_key) is not None:
+                choices.append(sensor_key)
+            elif kind == "gelsight" and tactile_path_parts_for_sensor_key(sensor_key) is not None:
+                choices.append(sensor_key)
+        return sorted(dict.fromkeys(choices))
+
+    def _sensor_key_is_valid_for_kind(self, kind: str, sensor_key: str) -> bool:
+        sensor_key = canonical_sensor_key(sensor_key)
+        if kind == "realsense":
+            return camera_path_parts_for_sensor_key(sensor_key) is not None
+        if kind == "gelsight":
+            return tactile_path_parts_for_sensor_key(sensor_key) is not None
+        return False
+
+    def _set_sensor_combo_value(self, combo: QComboBox, value: str) -> None:
+        combo.blockSignals(True)
+        combo.setCurrentText(value)
+        combo.blockSignals(False)
+
+    def _ensure_sensor_combo_has_key(self, combo: QComboBox, sensor_key: str) -> None:
+        sensor_key = canonical_sensor_key(sensor_key)
+        if not sensor_key:
+            return
+        if combo.findText(sensor_key) >= 0:
+            return
+        custom_index = combo.findText(CUSTOM_SENSOR_KEY_LABEL)
+        insert_index = combo.count() if custom_index < 0 else custom_index
+        combo.insertItem(insert_index, sensor_key)
+
+    def _prompt_custom_sensor_key(self, kind: str, current_value: str) -> str | None:
+        placeholder = (
+            "/spark/cameras/world/scene_4"
+            if kind == "realsense"
+            else "/spark/tactile/lightning/finger_left"
+        )
+        sensor_key, accepted = QInputDialog.getText(
+            self,
+            "Custom Sensor Key",
+            f"Enter canonical sensor key for {kind}.\nExample: {placeholder}",
+            text=current_value,
+        )
+        if not accepted:
+            return None
+        return canonical_sensor_key(sensor_key)
+
+    def _handle_sensor_combo_change(self, combo: QComboBox, kind: str) -> None:
+        selected = canonical_sensor_key(combo.currentText())
+        previous = canonical_sensor_key(str(combo.property("last_valid_sensor_key") or ""))
+
+        if selected == CUSTOM_SENSOR_KEY_LABEL:
+            custom_key = self._prompt_custom_sensor_key(kind, previous)
+            if custom_key is None:
+                self._set_sensor_combo_value(combo, previous)
+                return
+            if not self._sensor_key_is_valid_for_kind(kind, custom_key):
+                self.config_file_status.setText(
+                    f"Invalid sensor key for {kind}: {custom_key}"
+                )
+                self._set_sensor_combo_value(combo, previous)
+                return
+            self._ensure_sensor_combo_has_key(combo, custom_key)
+            self._set_sensor_combo_value(combo, custom_key)
+            combo.setProperty("last_valid_sensor_key", custom_key)
+            self.config_file_status.setText(f"Using custom sensor key: {custom_key}")
+            return
+
+        if selected and self._sensor_key_is_valid_for_kind(kind, selected):
+            combo.setProperty("last_valid_sensor_key", selected)
+            return
+
+        combo.setProperty("last_valid_sensor_key", "")
+
+    def _current_device_selection_map(self) -> dict[tuple[str, str], dict[str, object]]:
+        selections: dict[tuple[str, str], dict[str, object]] = {}
+        for device in self._session_devices():
+            key = (str(device.get("kind", "")).strip(), _device_identifier(device))
+            if key[1]:
+                selections[key] = device
+        return selections
+
+    def _discovery_config(self) -> dict[str, object]:
+        return {
+            "active_arms": str(self._get_field("active_arms")).strip() or "lightning",
+            "sensors_file": str(self._get_field("sensors_file")).strip(),
+            "session_devices": self._session_devices(),
+        }
+
+    def _set_session_devices(self, devices: list[dict[str, object]]) -> None:
+        self.session_devices_table.setRowCount(0)
+        for device in devices:
+            self._append_session_device_row(device)
+
+    def _set_discovered_devices(self, devices: list[dict[str, object]], *, preserve_existing: bool = False) -> None:
+        discovered_devices = [dict(device) for device in devices if isinstance(device, dict)]
+        if preserve_existing:
+            current = self._current_device_selection_map()
+            for device in discovered_devices:
+                key = (str(device.get("kind", "")).strip(), _device_identifier(device))
+                existing = current.get(key)
+                if existing is None:
+                    continue
+                device["enabled"] = bool(existing.get("enabled", False))
+                existing_sensor_key = str(existing.get("sensor_key", "")).strip()
+                if existing_sensor_key:
+                    device["sensor_key"] = existing_sensor_key
+        self._set_session_devices(discovered_devices)
+
+    def _browse_preset_file(self) -> None:
+        current = self.presets_file_edit.text().strip()
+        start_dir = str((REPO_ROOT / current).resolve().parent) if current else str(REPO_ROOT / "data_pipeline" / "configs")
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Choose Presets File",
+            start_dir,
+            "YAML Files (*.yaml *.yml)",
+        )
+        if path:
+            self.presets_file_edit.setText(path)
+            self._load_selected_preset_file()
+
+    def _browse_sensors_file(self) -> None:
+        current = str(self._get_field("sensors_file")).strip()
+        start_dir = str((REPO_ROOT / current).resolve().parent) if current else str(REPO_ROOT / "data_pipeline" / "configs")
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Choose Sensors File",
+            start_dir,
+            "YAML Files (*.yaml *.yml)",
+        )
+        if not path:
+            return
+        try:
+            stored = self.backend.set_default_sensors_file(path)
+        except Exception as exc:
+            self.config_file_status.setText(str(exc))
+            return
+        self._set_field("sensors_file", stored)
+        self._discover_session_devices()
+        self.config_file_status.setText(f"Loaded sensors file: {stored}")
+
+    def _save_selected_sensors_file(self) -> None:
+        current_ref = str(self._get_field("sensors_file")).strip()
+        suggested = (
+            current_ref
+            if current_ref and not current_ref.endswith("sensors.example.yaml")
+            else str(REPO_ROOT / "data_pipeline" / "configs" / "sensors.local.yaml")
+        )
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Sensors File",
+            suggested,
+            "YAML Files (*.yaml *.yml)",
+        )
+        if not path:
+            self.config_file_status.setText("Save canceled.")
+            return
+        try:
+            saved_path = self.backend.save_sensors_file(path, self._session_devices())
+            stored = self.backend.get_default_sensors_file()
+        except Exception as exc:
+            self.config_file_status.setText(str(exc))
+            return
+        self._set_field("sensors_file", stored)
+        self._discover_session_devices()
+        self.config_file_status.setText(f"Saved sensors file: {saved_path}")
+
+    def _load_selected_sensors_file(self) -> None:
+        sensors_file = str(self._get_field("sensors_file")).strip()
+        if not sensors_file:
+            return
+        try:
+            stored = self.backend.set_default_sensors_file(sensors_file)
+        except Exception as exc:
+            self.config_file_status.setText(str(exc))
+            return
+        self._set_field("sensors_file", stored)
+        self._discover_session_devices()
+        self.config_file_status.setText(f"Loaded sensors file: {stored}")
+
+    def _apply_form_config(self, config: dict[str, object]) -> None:
+        self._set_field("task_name", str(config.get("task_name", "")))
+        self._set_field("language_instruction", str(config.get("language_instruction", "")))
+        if "operator" in config:
+            self._set_field("operator", str(config.get("operator", "")))
+        self._set_field("active_arms", str(config.get("active_arms", "lightning")))
+        self._set_field("conversion_profile", str(config.get("conversion_profile", "")))
+        discovery_config = {
+            "active_arms": str(config.get("active_arms", "lightning")),
+            "sensors_file": str(self._get_field("sensors_file")).strip(),
+            "session_devices": list(config.get("session_devices", [])) if isinstance(config.get("session_devices", []), list) else [],
+        }
+        devices = self.backend.discover_session_devices(discovery_config)
+        self._set_discovered_devices(devices, preserve_existing=False)
+
+    def _load_selected_preset_file(self) -> None:
+        preset_path = self.presets_file_edit.text().strip()
+        try:
+            config = self.backend.load_preset_file(preset_path)
+        except Exception as exc:
+            self.config_file_status.setText(str(exc))
+            return
+        self._apply_form_config(config)
+        stored = self.backend.get_default_presets_file()
+        self.presets_file_edit.setText(stored)
+        self.config_file_status.setText(f"Loaded presets file: {stored}")
+
+    def _save_selected_preset_file(self) -> None:
+        current_ref = self.presets_file_edit.text().strip()
+        suggested = (
+            current_ref
+            if current_ref and not current_ref.endswith("operator_console_presets.example.yaml")
+            else str(REPO_ROOT / "data_pipeline" / "configs" / "operator_console_presets.yaml")
+        )
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Presets File",
+            suggested,
+            "YAML Files (*.yaml *.yml)",
+        )
+        if not path:
+            self.config_file_status.setText("Save canceled.")
+            return
+        try:
+            saved_path = self.backend.save_preset_file(path, self._config())
+        except Exception as exc:
+            self.config_file_status.setText(str(exc))
+            return
+        stored = self.backend.get_default_presets_file()
+        self.presets_file_edit.setText(stored)
+        self.config_file_status.setText(f"Saved presets file: {saved_path}")
+
+    def _append_session_device_row(self, device: dict[str, object]) -> None:
+        row = self.session_devices_table.rowCount()
+        self.session_devices_table.insertRow(row)
+
+        enabled = QCheckBox()
+        enabled.setChecked(bool(device.get("enabled", False)))
+        enabled.setStyleSheet("margin-left:18px;")
+        self.session_devices_table.setCellWidget(row, 0, enabled)
+
+        kind_value = str(device.get("kind", "device")).strip() or "device"
+        kind_item = QTableWidgetItem(kind_value)
+        self.session_devices_table.setItem(row, 1, kind_item)
+
+        identifier_value = _device_identifier(device)
+        identifier_item = QTableWidgetItem(identifier_value)
+        self.session_devices_table.setItem(row, 2, identifier_item)
+
+        sensor_combo = QComboBox()
+        sensor_combo.addItem("")
+        sensor_choices = self._sensor_key_choices_for_kind(kind_value)
+        sensor_combo.addItems(sensor_choices)
+        sensor_combo.addItem(CUSTOM_SENSOR_KEY_LABEL)
+        sensor_key_value = str(device.get("sensor_key", "")).strip()
+        if sensor_key_value and sensor_key_value != CUSTOM_SENSOR_KEY_LABEL:
+            self._ensure_sensor_combo_has_key(sensor_combo, sensor_key_value)
+        if sensor_key_value:
+            sensor_combo.setCurrentText(sensor_key_value)
+        else:
+            sensor_combo.setCurrentIndex(0)
+        sensor_combo.setProperty("last_valid_sensor_key", sensor_key_value)
+        sensor_combo.currentIndexChanged.connect(
+            lambda _index, combo=sensor_combo, kind=kind_value: self._handle_sensor_combo_change(combo, kind)
+        )
+        self.session_devices_table.setCellWidget(row, 3, sensor_combo)
+
+        identifier_item.setData(
+            Qt.ItemDataRole.UserRole,
+            {
+                "kind": kind_value,
+                "serial_number": str(device.get("serial_number", "")).strip(),
+                "device_path": str(device.get("device_path", "")).strip(),
+                "sensor_key": sensor_key_value,
+            },
+        )
+
+    def _session_devices(self) -> list[dict[str, object]]:
+        devices: list[dict[str, object]] = []
+        for row in range(self.session_devices_table.rowCount()):
+            enabled_widget = self.session_devices_table.cellWidget(row, 0)
+            kind_item = self.session_devices_table.item(row, 1)
+            identifier_item = self.session_devices_table.item(row, 2)
+            sensor_widget = self.session_devices_table.cellWidget(row, 3)
+            if not isinstance(enabled_widget, QCheckBox):
+                continue
+            if not isinstance(kind_item, QTableWidgetItem):
+                continue
+            if not isinstance(identifier_item, QTableWidgetItem):
+                continue
+            if not isinstance(sensor_widget, QComboBox):
+                continue
+            metadata = identifier_item.data(Qt.ItemDataRole.UserRole) if identifier_item is not None else {}
+            if not isinstance(metadata, dict):
+                metadata = {}
+
+            kind = kind_item.text().strip()
+            identifier = identifier_item.text().strip()
+            sensor_key = sensor_widget.currentText().strip()
+            device: dict[str, object] = {
+                "kind": kind,
+                "enabled": enabled_widget.isChecked(),
+                "sensor_key": sensor_key,
+            }
+            if kind == "realsense":
+                device["serial_number"] = str(metadata.get("serial_number", "")).strip() or identifier
+            elif kind == "gelsight":
+                device["device_path"] = str(metadata.get("device_path", "")).strip() or identifier
+                serial_number = str(metadata.get("serial_number", "")).strip()
+                if serial_number:
+                    device["serial_number"] = serial_number
+            devices.append(device)
+        return devices
+
+    def _discover_session_devices(self) -> None:
+        devices = self.backend.discover_session_devices(self._discovery_config())
+        self._set_discovered_devices(devices, preserve_existing=True)
+
+    def _build_session_actions_box(self) -> QWidget:
+        box = QGroupBox("Session Actions")
+        layout = QGridLayout(box)
+        layout.setSpacing(8)
+        self.start_session_button = QPushButton("Start Session")
+        self.start_session_button.clicked.connect(self._start_session)
+        self.stop_session_button = QPushButton("Stop Session")
+        self.stop_session_button.clicked.connect(self._stop_session)
+        self.validate_button = QPushButton("Validate")
+        self.validate_button.clicked.connect(self._validate)
+        layout.addWidget(self.start_session_button, 0, 0)
+        layout.addWidget(self.stop_session_button, 0, 1)
+        layout.addWidget(self.validate_button, 1, 0, 1, 2)
+        return box
+
+    def _build_artifacts_box(self) -> QWidget:
+        artifacts_box = QGroupBox("Latest Artifacts")
+        artifacts_layout = QFormLayout(artifacts_box)
+        artifacts_layout.setSpacing(8)
+        conversion_profile_row = QWidget()
+        conversion_profile_layout = QHBoxLayout(conversion_profile_row)
+        conversion_profile_layout.setContentsMargins(0, 0, 0, 0)
+        conversion_profile_layout.setSpacing(8)
+        self.form_widgets["conversion_profile"] = QLineEdit()
+        self.form_widgets["conversion_profile"].setPlaceholderText(
+            "conversion YAML, e.g. data_pipeline/configs/multisensor_20hz.yaml"
+        )
+        self.form_widgets["conversion_profile"].editingFinished.connect(self._normalize_conversion_profile_field)
+        self.browse_conversion_profile_button = QPushButton("Browse")
+        self.browse_conversion_profile_button.clicked.connect(self._browse_conversion_profile)
+        conversion_profile_layout.addWidget(self.form_widgets["conversion_profile"], 1)
+        conversion_profile_layout.addWidget(self.browse_conversion_profile_button)
+        artifacts_layout.addRow("Conversion Profile", conversion_profile_row)
+        publish_target_row = QWidget()
+        publish_target_layout = QHBoxLayout(publish_target_row)
+        publish_target_layout.setContentsMargins(0, 0, 0, 0)
+        publish_target_layout.setSpacing(8)
+        self.published_target_edit = QLineEdit()
+        self.published_target_edit.setPlaceholderText("folder under published/, e.g. new")
+        self.published_target_edit.editingFinished.connect(self._save_published_dataset_target)
+        self.browse_published_target_button = QPushButton("Browse")
+        self.browse_published_target_button.clicked.connect(self._browse_published_dataset_target)
+        publish_target_layout.addWidget(self.published_target_edit, 1)
+        publish_target_layout.addWidget(self.browse_published_target_button)
+        artifacts_layout.addRow("Published Folder", publish_target_row)
+        self.latest_episode_label = QLabel("")
+        self.latest_episode_label.setWordWrap(True)
+        self.latest_episode_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.latest_dataset_label = QLabel("")
+        self.latest_dataset_label.setWordWrap(True)
+        self.latest_dataset_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.latest_viewer_label = QLabel("")
+        self.latest_viewer_label.setWordWrap(True)
+        self.latest_viewer_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        artifacts_layout.addRow("Episode", self.latest_episode_label)
+        artifacts_layout.addRow("Dataset", self.latest_dataset_label)
+        artifacts_layout.addRow("Viewer", self.latest_viewer_label)
+
+        notes_container = QWidget()
+        notes_layout = QVBoxLayout(notes_container)
+        notes_layout.setContentsMargins(0, 0, 0, 0)
+        notes_layout.setSpacing(6)
+        self.latest_episode_notes_text = QPlainTextEdit()
+        self.latest_episode_notes_text.setPlaceholderText("Optional post-take notes for the latest episode.")
+        self.latest_episode_notes_text.setMaximumHeight(110)
+        self.latest_episode_notes_text.textChanged.connect(self._update_episode_notes_button_state)
+        notes_layout.addWidget(self.latest_episode_notes_text)
+        notes_row = QHBoxLayout()
+        notes_row.setContentsMargins(0, 0, 0, 0)
+        notes_row.setSpacing(8)
+        self.save_episode_notes_button = QPushButton("Save Episode Notes")
+        self.save_episode_notes_button.clicked.connect(self._save_latest_episode_notes)
+        self.latest_episode_notes_status = QLabel("")
+        self.latest_episode_notes_status.setWordWrap(True)
+        notes_row.addWidget(self.save_episode_notes_button)
+        notes_row.addWidget(self.latest_episode_notes_status, 1)
+        notes_layout.addLayout(notes_row)
+        artifacts_layout.addRow("Post-take Notes", notes_container)
+        return artifacts_box
+
+    def _browse_published_dataset_target(self) -> None:
+        current = self.published_target_edit.text().strip()
+        try:
+            start_dir = (
+                str(self.backend._published_dataset_target_path(current))
+                if current
+                else str(self.backend._published_root())
+            )
+        except Exception:
+            start_dir = str(self.backend._published_root())
+        path = QFileDialog.getExistingDirectory(
+            self,
+            "Choose Published Folder",
+            start_dir,
+        )
+        if not path:
+            return
+        try:
+            stored = self.backend.set_published_dataset_target(path)
+        except Exception as exc:
+            self.config_file_status.setText(str(exc))
+            return
+        self.published_target_last_saved = stored
+        self.published_target_edit.setText(stored)
+
+    def _browse_conversion_profile(self) -> None:
+        current = str(self._get_field("conversion_profile")).strip()
+        start_dir = str((REPO_ROOT / current).resolve().parent) if current else str(REPO_ROOT / "data_pipeline" / "configs")
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Choose Conversion Profile",
+            start_dir,
+            "YAML Files (*.yaml *.yml)",
+        )
+        if not path:
+            return
+        stored = self.backend._stored_path(Path(path))
+        self._set_field("conversion_profile", stored)
+        self.config_file_status.setText(f"Loaded conversion profile: {stored}")
+
+    def _normalize_conversion_profile_field(self) -> None:
+        profile_ref = str(self._get_field("conversion_profile")).strip()
+        if not profile_ref:
+            return
+        profile_path = self.backend._resolve_user_path(profile_ref)
+        if not profile_path.is_file():
+            self.config_file_status.setText(f"Conversion profile not found: {profile_path}")
+            return
+        stored = self.backend._stored_path(profile_path)
+        self._set_field("conversion_profile", stored)
+        self.config_file_status.setText(f"Loaded conversion profile: {stored}")
+
+    def _save_published_dataset_target(self) -> None:
+        text = self.published_target_edit.text().strip()
+        if text == self.published_target_last_saved:
+            return
+        try:
+            stored = self.backend.set_published_dataset_target(text)
+        except Exception as exc:
+            self.config_file_status.setText(str(exc))
+            self.published_target_edit.blockSignals(True)
+            self.published_target_edit.setText(self.published_target_last_saved)
+            self.published_target_edit.blockSignals(False)
+            return
+        self.published_target_last_saved = stored
+        self.published_target_edit.blockSignals(True)
+        self.published_target_edit.setText(stored)
+        self.published_target_edit.blockSignals(False)
+
+    def _build_health_panel(self) -> QWidget:
+        box = QGroupBox("Subsystem Health")
+        layout = QVBoxLayout(box)
+        layout.setSpacing(10)
+        layout.setContentsMargins(10, 14, 10, 14)
+        display_names = {
+            "spark_devices": "SPARK Devices",
+            "teleop_gui": "Teleop GUI",
+            "realsense_contract": "RealSense",
+            "gelsight_contract": "GelSight",
+            "recorder": "Recorder",
+            "converter": "Converter",
+        }
+        for name in ["spark_devices", "teleop_gui", "realsense_contract", "gelsight_contract", "recorder", "converter"]:
+            card = HealthCard(display_names[name])
+            card.primary_button.clicked.connect(lambda _checked=False, process=name: self._start_named_process(process))
+            card.secondary_button.clicked.connect(lambda _checked=False, process=name: self._stop_named_process(process))
+            self.health_cards[name] = card
+            layout.addWidget(card)
+        layout.addStretch(1)
+        return box
+
+    def _build_command_panel(self) -> QWidget:
+        box = QGroupBox("Selected Process")
+        layout = QVBoxLayout(box)
+        layout.setContentsMargins(10, 10, 10, 10)
+        self.selected_process_label = QLabel("Process: spark_devices")
+        self.selected_process_label.setObjectName("selectedProcessLabel")
+        layout.addWidget(self.selected_process_label)
+        self.command_label = QLabel("")
+        self.command_label.setWordWrap(True)
+        self.command_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.command_label.setMaximumHeight(66)
+        layout.addWidget(self.command_label)
+        return box
+
+    def _build_logs_panel(self) -> QWidget:
+        box = QGroupBox("Process Logs")
+        layout = QVBoxLayout(box)
+        layout.setContentsMargins(10, 10, 10, 10)
+        self.log_process_combo = QComboBox()
+        for name in self.backend.processes.keys():
+            self.log_process_combo.addItem(name)
+        layout.addWidget(self.log_process_combo)
+        self.log_text = QPlainTextEdit()
+        self.log_text.setReadOnly(True)
+        layout.addWidget(self.log_text, 1)
+        return box
+
+    def _build_output_panel(self) -> QWidget:
+        box = QGroupBox("Action Output")
+        layout = QVBoxLayout(box)
+        layout.setContentsMargins(10, 10, 10, 10)
+        self.output_text = QPlainTextEdit()
+        self.output_text.setReadOnly(True)
+        layout.addWidget(self.output_text, 1)
+        return box
+
+    def _apply_styles(self) -> None:
+        self.setStyleSheet(
+            """
+            QMainWindow {
+                background: #eef2f6;
+            }
+            QGroupBox {
+                font-weight: 700;
+                border: 1px solid #d8dde6;
+                border-radius: 16px;
+                margin-top: 10px;
+                background: #ffffff;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 14px;
+                padding: 0 4px;
+                color: #223044;
+            }
+            QFrame#healthCard {
+                background: #fbfcfe;
+                border: 1px solid #dde3ec;
+                border-radius: 16px;
+            }
+            QLabel#cardTitle {
+                font-size: 15px;
+                font-weight: 700;
+                color: #1f2a37;
+            }
+            QLabel#cardSummary {
+                color: #233245;
+                font-weight: 600;
+            }
+            QLabel#cardDetails {
+                color: #5d6a79;
+            }
+            QLabel#selectedProcessLabel {
+                font-weight: 600;
+                color: #5d6a79;
+            }
+            QLineEdit, QPlainTextEdit {
+                border: 1px solid #cfd6e1;
+                border-radius: 10px;
+                padding: 8px 10px;
+                background: #ffffff;
+            }
+            QComboBox QAbstractItemView {
+                border: 1px solid #cfd6e1;
+                background: #ffffff;
+                selection-background-color: #edf4ff;
+                selection-color: #1f2a37;
+            }
+            QPushButton {
+                min-height: 34px;
+                border: 1px solid #c9d4e2;
+                border-radius: 10px;
+                background: #ffffff;
+                padding: 6px 12px;
+            }
+            QPushButton:hover {
+                background: #edf4ff;
+            }
+            QPushButton:disabled {
+                color: #9aa3af;
+                background: #f5f6f8;
+            }
+            """
+        )
+
+    def _load_defaults(self) -> None:
+        presets_file = self.backend.get_default_presets_file()
+        sensors_file = self.backend.get_default_sensors_file()
+        self.presets_file_edit.setText(presets_file)
+        self._set_field("sensors_file", sensors_file)
+        self._apply_form_config(self.backend.default_form_config(presets_file))
+        self.published_target_last_saved = self.backend.get_published_dataset_target()
+        self.published_target_edit.setText(self.published_target_last_saved)
+        self.config_file_status.setText(f"Loaded presets file: {presets_file}")
+
+    def _set_field(self, key: str, value: str | bool) -> None:
+        widget = self.form_widgets[key]
+        if isinstance(widget, QLineEdit):
+            widget.setText(str(value))
+        elif isinstance(widget, QComboBox):
+            index = widget.findText(str(value))
+            if index >= 0:
+                widget.setCurrentIndex(index)
+            else:
+                widget.setEditText(str(value))
+        elif isinstance(widget, QCheckBox):
+            widget.setChecked(bool(value))
+
+    def _get_field(self, key: str) -> str | bool:
+        widget = self.form_widgets[key]
+        if isinstance(widget, QLineEdit):
+            return widget.text().strip()
+        if isinstance(widget, QComboBox):
+            return widget.currentText().strip()
+        if isinstance(widget, QCheckBox):
+            return widget.isChecked()
+        raise TypeError(f"Unsupported widget type for {key}")
+
+    def _config(self) -> dict[str, object]:
+        session_devices = self._session_devices()
+        enabled_realsense = [
+            device for device in session_devices
+            if bool(device.get("enabled", False)) and str(device.get("kind", "")).strip() == "realsense"
+        ]
+        enabled_gelsights = [
+            device for device in session_devices
+            if bool(device.get("enabled", False)) and str(device.get("kind", "")).strip() == "gelsight"
+        ]
+
+        return {
+            "task_name": self._get_field("task_name"),
+            "language_instruction": self._get_field("language_instruction"),
+            "operator": self._get_field("operator"),
+            "active_arms": self._get_field("active_arms"),
+            "conversion_profile": self._get_field("conversion_profile"),
+            "sensors_file": self._get_field("sensors_file"),
+            "session_devices": session_devices,
+            "realsense_enabled": bool(enabled_realsense),
+            "gelsight_enabled": bool(enabled_gelsights),
+        }
+
+    def _start_session(self) -> None:
+        self.backend.start_session(self._config())
+        self._focus_process_logs("spark_devices")
+
+    def _stop_session(self) -> None:
+        self.backend.stop_session()
+
+    def _validate(self) -> None:
+        self.backend.start_validation(self._config())
+
+    def _start_recording(self) -> None:
+        self.backend.start_recording(self._config())
+        self._focus_process_logs("recorder")
+
+    def _stop_recording(self) -> None:
+        self.backend.stop_recording()
+        self._focus_process_logs("recorder")
+
+    def _save_latest_episode_notes(self) -> None:
+        self.backend.save_latest_episode_notes(self.latest_episode_notes_text.toPlainText())
+        self._update_episode_notes_status(self.backend.snapshot(self._config()))
+
+    def _convert_latest(self) -> None:
+        self.backend.start_conversion(self._config())
+        self._focus_process_logs("converter")
+
+    def _open_viewer(self) -> None:
+        self.backend.open_viewer(self._config())
+        self._focus_process_logs("viewer_server")
+
+    def _start_named_process(self, name: str) -> None:
+        self.backend.start_named_process(name, self._config())
+        if name in self.backend.processes:
+            self._focus_process_logs(name)
+
+    def _stop_named_process(self, name: str) -> None:
+        self.backend.stop_named_process(name)
+        if name in self.backend.processes:
+            self._focus_process_logs(name)
+
+    def _tick(self) -> None:
+        config = self._config()
+        self.backend.request_health_refresh(config)
+        snapshot = self.backend.snapshot(config)
+        latest_episode_id = str(snapshot.get("latest_episode_id") or "")
+        self._sync_episode_notes_target(latest_episode_id)
+        self.latest_episode_label.setText(latest_episode_id)
+        self.latest_dataset_label.setText(snapshot.get("latest_dataset_id") or "")
+        self.latest_viewer_label.setText(snapshot.get("latest_viewer_url") or "")
+        self._update_episode_notes_status(snapshot)
+        self._render_health(snapshot.get("health", {}))
+        self._render_logs(snapshot)
+        self._render_output(snapshot)
+        self._update_button_states(snapshot)
+
+    def _sync_episode_notes_target(self, latest_episode_id: str) -> None:
+        if latest_episode_id == self.notes_target_episode_id:
+            return
+        self.notes_target_episode_id = latest_episode_id
+        self.latest_episode_notes_text.blockSignals(True)
+        self.latest_episode_notes_text.setPlainText("")
+        self.latest_episode_notes_text.blockSignals(False)
+        self.latest_episode_notes_status.setText("")
+        self._update_episode_notes_button_state()
+
+    def _update_episode_notes_status(self, snapshot: dict[str, object]) -> None:
+        latest_note_output = str(snapshot.get("latest_episode_notes_output") or "").strip()
+        if latest_note_output:
+            self.latest_episode_notes_status.setText(latest_note_output)
+            return
+        if self.notes_target_episode_id:
+            self.latest_episode_notes_status.setText("Optional. Saved to this episode only.")
+        else:
+            self.latest_episode_notes_status.setText("Record an episode first.")
+
+    def _update_episode_notes_button_state(self) -> None:
+        has_episode = bool(self.notes_target_episode_id)
+        has_text = bool(self.latest_episode_notes_text.toPlainText().strip())
+        recorder_running = self.backend.processes["recorder"].state == "running"
+        self.save_episode_notes_button.setEnabled(has_episode and has_text and not recorder_running)
+
+    def _render_health(self, health: dict[str, dict[str, object]]) -> None:
+        for name, card in self.health_cards.items():
+            status_card = health.get(name, {"status": "off", "summary": "Unknown", "details": []})
+            card.set_status(
+                str(status_card.get("status", "off")),
+                str(status_card.get("summary", "Unknown")),
+                list(status_card.get("details", [])),
+            )
+
+    def _render_logs(self, snapshot: dict[str, object]) -> None:
+        selected = self.log_process_combo.currentText().strip() or "spark_devices"
+        logs = self.backend.get_process_logs(selected)
+        rendered = "\n".join(logs[-200:])
+        process = snapshot.get("processes", {}).get(selected, {})
+        self.selected_process_label.setText(f"Process: {selected}")
+        self.command_label.setText(str(process.get("command", "")))
+        if rendered == self.last_log_render:
+            return
+        self.last_log_render = rendered
+        self.log_text.setPlainText(rendered)
+        scrollbar = self.log_text.verticalScrollBar()
+        scrollbar.setValue(scrollbar.maximum())
+
+    def _focus_process_logs(self, process_name: str) -> None:
+        index = self.log_process_combo.findText(process_name)
+        if index >= 0:
+            self.log_process_combo.setCurrentIndex(index)
+
+    def _render_output(self, snapshot: dict[str, object]) -> None:
+        lines = [
+            f"Session state: {snapshot.get('session_state', 'idle')}",
+            f"Validation state: {snapshot.get('validation_state', 'not_run')}",
+            "",
+        ]
+        if snapshot.get("last_action_error"):
+            lines.extend(["Last error:", str(snapshot["last_action_error"]), ""])
+        if snapshot.get("last_validation_output"):
+            lines.extend(["Validate output:", str(snapshot["last_validation_output"]), ""])
+        if snapshot.get("latest_recording_check_output"):
+            lines.extend(["Recording check:", str(snapshot["latest_recording_check_output"]), ""])
+        if snapshot.get("latest_conversion_output"):
+            lines.extend(["Convert output:", str(snapshot["latest_conversion_output"])])
+        if snapshot.get("latest_episode_notes_output"):
+            lines.extend(["Episode notes:", str(snapshot["latest_episode_notes_output"])])
+        rendered = "\n".join(lines).strip()
+        if rendered == self.last_output_render:
+            return
+        self.last_output_render = rendered
+        self.output_text.setPlainText(rendered)
+        scrollbar = self.output_text.verticalScrollBar()
+        scrollbar.setValue(scrollbar.maximum())
+
+    def _update_button_states(self, snapshot: dict[str, object]) -> None:
+        current_config = self._config()
+        session_state = str(snapshot.get("session_state", "idle"))
+        validation_state = str(snapshot.get("validation_state", "not_run"))
+        processes = snapshot.get("processes", {})
+        recorder_state = str(processes.get("recorder", {}).get("state", "stopped"))
+        converter_state = str(processes.get("converter", {}).get("state", "stopped"))
+        recording_ready = bool(snapshot.get("latest_episode_id")) and snapshot.get("latest_recording_ok") is True
+        recording_check_running = bool(snapshot.get("recording_check_running"))
+        viewer_available = self.backend.viewer_target_available(current_config)
+        live_states = {"running", "starting", "stopping"}
+        core_running = any(
+            str(processes.get(name, {}).get("state", "stopped")) in live_states
+            for name in ("spark_devices", "teleop_gui", "realsense_contract", "gelsight_contract")
+        )
+        work_running = any(
+            str(processes.get(name, {}).get("state", "stopped")) in live_states
+            for name in ("recorder", "converter")
+        )
+        session_running = core_running or work_running
+        can_record = validation_state == "passed" and core_running and recorder_state != "running"
+
+        self.start_session_button.setEnabled(not session_running)
+        self.stop_session_button.setEnabled(session_running)
+        self.validate_button.setEnabled(core_running and validation_state != "running")
+
+        for name, card in self.health_cards.items():
+            state = str(processes.get(name, {}).get("state", "stopped"))
+            start_enabled = state not in {"running", "starting", "stopping"}
+            stop_enabled = state in {"running", "starting", "failed"}
+
+            if name == "realsense_contract" and not bool(current_config["realsense_enabled"]):
+                start_enabled = False
+                stop_enabled = False
+
+            if name == "gelsight_contract" and not bool(current_config["gelsight_enabled"]):
+                start_enabled = False
+                stop_enabled = False
+
+            if name == "recorder":
+                self._update_recorder_card(card, recorder_state, can_record, recording_check_running)
+                continue
+            if name == "converter":
+                self._update_converter_card(card, converter_state, recording_ready, viewer_available)
+                continue
+
+            card.primary_button.setText("Start")
+            card.primary_button.clicked.disconnect() if False else None
+            card.primary_button.setEnabled(start_enabled)
+            card.secondary_button.setText("Stop")
+            card.secondary_button.setEnabled(stop_enabled)
+
+    def _update_recorder_card(self, card: HealthCard, recorder_state: str, can_record: bool, recording_check_running: bool) -> None:
+        card.primary_button.clicked.disconnect() if False else None
+        card.secondary_button.clicked.disconnect() if False else None
+        self._rebind_button(card.primary_button, "Record", self._start_recording)
+        self._rebind_button(card.secondary_button, "Stop", self._stop_recording)
+        if recorder_state == "running":
+            card.primary_button.setEnabled(False)
+            card.secondary_button.setEnabled(True)
+            return
+        if recording_check_running:
+            self._rebind_button(card.primary_button, "Analyzing", self._start_recording)
+            self._rebind_button(card.secondary_button, "Wait", self._stop_recording)
+            card.primary_button.setEnabled(False)
+            card.secondary_button.setEnabled(False)
+            return
+        card.primary_button.setEnabled(bool(can_record))
+        card.secondary_button.setEnabled(False)
+
+    def _update_converter_card(self, card: HealthCard, converter_state: str, recording_ready: bool, viewer_available: bool) -> None:
+        if converter_state == "running":
+            self._rebind_button(card.primary_button, "Convert", self._convert_latest)
+            self._rebind_button(card.secondary_button, "Stop", lambda: self._stop_named_process("converter"))
+            card.primary_button.setEnabled(False)
+            card.secondary_button.setEnabled(True)
+            return
+        if recording_ready:
+            self._rebind_button(card.primary_button, "Convert", self._convert_latest)
+            self._rebind_button(card.secondary_button, "Open Viewer", self._open_viewer)
+            card.primary_button.setEnabled(True)
+            card.secondary_button.setEnabled(bool(viewer_available))
+            return
+        if viewer_available:
+            self._rebind_button(card.primary_button, "Open Viewer", self._open_viewer)
+            self._rebind_button(card.secondary_button, "Stop", lambda: self._stop_named_process("converter"))
+            card.primary_button.setEnabled(True)
+            card.secondary_button.setEnabled(False)
+            return
+        self._rebind_button(card.primary_button, "Convert", self._convert_latest)
+        self._rebind_button(card.secondary_button, "Stop", lambda: self._stop_named_process("converter"))
+        card.primary_button.setEnabled(False)
+        card.secondary_button.setEnabled(False)
+
+    def _rebind_button(self, button: QPushButton, text: str, callback) -> None:
+        try:
+            button.clicked.disconnect()
+        except Exception:
+            pass
+        button.setText(text)
+        button.clicked.connect(callback)
+
+    def closeEvent(self, event) -> None:  # type: ignore[override]
+        self.backend.stop_session()
+        super().closeEvent(event)
+
+
+def main() -> int:
+    app = QApplication(sys.argv)
+    signal_read, signal_write = socket.socketpair()
+    signal_read.setblocking(False)
+    signal_write.setblocking(False)
+
+    previous_wakeup_fd = signal.set_wakeup_fd(signal_write.fileno())
+
+    def _qt_signal_handler(_signum, _frame) -> None:
+        return None
+
+    signal.signal(signal.SIGINT, _qt_signal_handler)
+    signal.signal(signal.SIGTERM, _qt_signal_handler)
+
+    notifier = QSocketNotifier(signal_read.fileno(), QSocketNotifier.Type.Read)
+
+    def _drain_signal_fd() -> None:
+        try:
+            signal_read.recv(128)
+        except BlockingIOError:
+            pass
+        app.quit()
+
+    notifier.activated.connect(_drain_signal_fd)
+    window = OperatorConsoleQtWindow()
+    window.show()
+    try:
+        return app.exec()
+    finally:
+        notifier.setEnabled(False)
+        signal.set_wakeup_fd(previous_wakeup_fd)
+        signal_read.close()
+        signal_write.close()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
