@@ -43,8 +43,10 @@ fi
 echo "Preparing viewer checkout at ${VIEWER_DIR}"
 (
   cd "${VIEWER_DIR}"
-  "${BUN_BIN}" install --frozen-lockfile
-  "${BUN_BIN}" run build
+  env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u all_proxy -u NO_PROXY -u no_proxy \
+    "${BUN_BIN}" install --frozen-lockfile
+  env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u all_proxy -u NO_PROXY -u no_proxy \
+    "${BUN_BIN}" run build
 )
 
 if [[ ! -f "${BUILD_ID_PATH}" ]]; then

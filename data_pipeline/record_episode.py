@@ -79,7 +79,7 @@ def select_topics(profile: dict, live_topics: dict[str, str], extra_topics: list
 def select_topics_from_session_plan(
     session_capture_plan: dict,
     live_topics: dict[str, str],
-) -> tuple[list[str], list[str], list[str]]:
+) -> list[str]:
     selected_topics = [
         str(topic).strip()
         for topic in session_capture_plan.get("selected_topics", [])
@@ -88,15 +88,10 @@ def select_topics_from_session_plan(
     if not selected_topics:
         raise RuntimeError("Session capture plan does not define any selected_topics.")
 
-    plan_extra_topics = [
-        str(topic).strip()
-        for topic in session_capture_plan.get("selected_extra_topics", [])
-        if str(topic).strip()
-    ]
     missing_topics = [topic for topic in selected_topics if topic not in live_topics]
     if missing_topics:
         raise RuntimeError(f"Session plan topics are not live: {missing_topics}")
-    return sorted(dict.fromkeys(selected_topics)), missing_topics, sorted(dict.fromkeys(plan_extra_topics))
+    return sorted(dict.fromkeys(selected_topics))
 
 
 def build_manifest(
@@ -236,7 +231,7 @@ def main(argv: list[str] | None = None) -> int:
             )
     profile, resolved_profile_path = resolve_profile_for_active_arms(args.profile, active_arms)
     if session_capture_plan is not None:
-        selected_topics, _, extra_topics = select_topics_from_session_plan(session_capture_plan, live_topics)
+        selected_topics = select_topics_from_session_plan(session_capture_plan, live_topics)
         enabled_sensor_keys = [
             str(device.get("sensor_key", "")).strip()
             for device in session_capture_plan.get("devices", [])

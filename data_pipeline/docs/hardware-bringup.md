@@ -43,8 +43,8 @@ controller layout. Do not assume that any two convenient ports are equivalent.
 
 The operator console now falls back to the checked-in example files on first launch:
 
-- [operator_console_presets.example.yaml](/home/srinivas/Desktop/pipeline/data_pipeline/configs/operator_console_presets.example.yaml)
-- [sensors.example.yaml](/home/srinivas/Desktop/pipeline/data_pipeline/configs/sensors.example.yaml)
+- [operator_console_presets.example.yaml](../configs/operator_console_presets.example.yaml)
+- [sensors.example.yaml](../configs/sensors.example.yaml)
 
 You do **not** need to create `sensors.local.yaml` before the GUI is usable.
 
@@ -233,16 +233,10 @@ At this stage, do **not** trust “the process started” as enough. The point o
 the operator console is that readiness is measured from live topics.
 
 
-## 9. Click `Validate`
+## 9. Optional Manual Topic Checks
 
-After the health cards look right, click:
-
-- `Validate`
-
-The validation output should not complain about missing required topics.
-
-For the enabled devices in this session, the expected topic surface should
-include:
+If you want one more low-level check, confirm that the enabled devices in this
+session are publishing the expected topic surface:
 
 - `/spark/session/teleop_active`
 - `/spark/<arm>/robot/joint_state`
@@ -254,9 +248,6 @@ include:
 - `/spark/cameras/<attachment>/<camera_slot>/color/image_raw`
 - `/spark/cameras/<attachment>/<camera_slot>/depth/image_rect_raw`
 - `/spark/tactile/<arm>/<finger_slot>/color/image_raw` when tactile is enabled
-
-
-## 10. Optional Manual Topic Checks
 
 If you want one more low-level check, use a ROS terminal:
 
@@ -292,7 +283,6 @@ Hardware bring-up is complete when:
 - `Start Session` brings up the expected services
 - the Teleop GUI is connected to the intended robot or robots
 - the required health cards are green
-- `Validate` passes without missing-topic errors
 
 At that point, the rig is ready for a first smoke-test recording.
 

@@ -18,7 +18,6 @@ Make sure these are already true:
 - `Start Session` has already been run
 - the Teleop GUI is connected to the intended robot or robots
 - the required health cards are green
-- `Validate` passes
 
 If those are not true yet, go back to:
 
@@ -125,7 +124,7 @@ Use this for:
 From the repository root:
 
 ```bash
-cd /home/srinivas/Desktop/pipeline
+cd ~/spark-workspace/spark-data-collection
 ls -td raw_episodes/* | head -n 3
 ```
 

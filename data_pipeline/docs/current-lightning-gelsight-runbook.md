@@ -36,6 +36,7 @@ Current published dataset identifiers for this embodiment:
 The shell alias `spark` is expected to:
 
 - `cd /home/srinivas/Desktop/pipeline`
+- `cd ~/spark-workspace/spark-data-collection`
 - source `/opt/ros/jazzy/setup.bash`
 - activate `.venv`
 
@@ -171,7 +172,7 @@ Then:
 Find the newest episode id:
 
 ```bash
-cd /home/srinivas/Desktop/pipeline
+cd ~/spark-workspace/spark-data-collection
 ls -td raw_episodes/* | head -n 3
 ```
 
@@ -179,11 +180,11 @@ Convert:
 
 ```bash
 source /opt/ros/jazzy/setup.bash
-source /home/srinivas/Desktop/pipeline/.venv/bin/activate
-python /home/srinivas/Desktop/pipeline/data_pipeline/convert_episode_bag_to_lerobot.py \
-  /home/srinivas/Desktop/pipeline/raw_episodes/<episode_id> \
+source ~/spark-workspace/spark-data-collection/.venv/bin/activate
+python ~/spark-workspace/spark-data-collection/data_pipeline/convert_episode_bag_to_lerobot.py \
+  ~/spark-workspace/spark-data-collection/raw_episodes/<episode_id> \
   --published-dataset-id spark_multisensor_lightning_tactile_v1 \
-  --published-root /home/srinivas/Desktop/pipeline/published
+  --published-root ~/spark-workspace/spark-data-collection/published
 ```
 
 
@@ -194,9 +195,9 @@ The current local viewer setup uses the official `lerobot-dataset-visualizer` ch
 If the server is not already running:
 
 ```bash
-cd /home/srinivas/Desktop/pipeline/lerobot-dataset-visualizer
+cd ~/spark-workspace/lerobot-dataset-visualizer
 env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u all_proxy -u NO_PROXY -u no_proxy \
-NEXT_PUBLIC_DATASET_URL=http://10.33.55.65:3000/datasets \
+NEXT_PUBLIC_DATASET_URL=http://localhost:3000/datasets \
 DATASET_URL=http://localhost:3000/datasets \
 REPO_ID=local/spark_multisensor_lightning_tactile_v1 \
 EPISODES=0 \
@@ -204,9 +205,9 @@ EPISODES=0 \
 ```
 
 ```bash
-cd /home/srinivas/Desktop/pipeline/lerobot-dataset-visualizer
+cd ~/spark-workspace/lerobot-dataset-visualizer
 env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u all_proxy -u NO_PROXY -u no_proxy \
-NEXT_PUBLIC_DATASET_URL=http://10.33.55.65:3000/datasets \
+NEXT_PUBLIC_DATASET_URL=http://localhost:3000/datasets \
 DATASET_URL=http://localhost:3000/datasets \
 REPO_ID=local/spark_multisensor_lightning_tactile_v1 \
 EPISODES=0 \

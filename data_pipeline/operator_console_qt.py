@@ -248,6 +248,7 @@ class OperatorConsoleQtWindow(QMainWindow):
         self.presets_file_edit = QLineEdit(self.backend.get_default_presets_file())
         self.presets_file_edit.setPlaceholderText("operator console presets YAML")
         self.presets_file_edit.returnPressed.connect(self._load_selected_preset_file)
+        self.presets_file_edit.textChanged.connect(lambda _text: self._update_path_field_tooltip(self.presets_file_edit))
         self.browse_profile_button = QPushButton("Browse")
         self.browse_profile_button.clicked.connect(self._browse_preset_file)
         self.save_profile_button = QPushButton("Save As")
@@ -292,6 +293,9 @@ class OperatorConsoleQtWindow(QMainWindow):
         sensors_file_layout.setContentsMargins(0, 0, 0, 0)
         sensors_file_layout.setSpacing(8)
         self.form_widgets["sensors_file"] = QLineEdit(self.backend.get_default_sensors_file())
+        self.form_widgets["sensors_file"].textChanged.connect(
+            lambda _text: self._update_path_field_tooltip(self.form_widgets["sensors_file"])  # type: ignore[arg-type]
+        )
         self.browse_sensors_button = QPushButton("Browse")
         self.browse_sensors_button.clicked.connect(self._browse_sensors_file)
         self.save_sensors_button = QPushButton("Save As")
@@ -356,10 +360,31 @@ class OperatorConsoleQtWindow(QMainWindow):
             return tactile_path_parts_for_sensor_key(sensor_key) is not None
         return False
 
+    def _update_path_field_tooltip(self, widget: QLineEdit) -> None:
+        widget.setToolTip(widget.text().strip())
+
+    def _set_path_field_value(self, widget: QLineEdit, value: str) -> None:
+        widget.setText(value)
+        self._update_path_field_tooltip(widget)
+        widget.setCursorPosition(0)
+
     def _set_sensor_combo_value(self, combo: QComboBox, value: str) -> None:
         combo.blockSignals(True)
         combo.setCurrentText(value)
         combo.blockSignals(False)
+
+    def _sensor_key_assigned_elsewhere(self, combo: QComboBox, sensor_key: str) -> bool:
+        sensor_key = canonical_sensor_key(sensor_key)
+        if not sensor_key:
+            return False
+        for row in range(self.session_devices_table.rowCount()):
+            sensor_widget = self.session_devices_table.cellWidget(row, 3)
+            if not isinstance(sensor_widget, QComboBox) or sensor_widget is combo:
+                continue
+            other = canonical_sensor_key(sensor_widget.currentText())
+            if other and other == sensor_key:
+                return True
+        return False
 
     def _ensure_sensor_combo_has_key(self, combo: QComboBox, sensor_key: str) -> None:
         sensor_key = canonical_sensor_key(sensor_key)
@@ -402,6 +427,10 @@ class OperatorConsoleQtWindow(QMainWindow):
                 )
                 self._set_sensor_combo_value(combo, previous)
                 return
+            if self._sensor_key_assigned_elsewhere(combo, custom_key):
+                self.config_file_status.setText(f"Sensor key already assigned: {custom_key}")
+                self._set_sensor_combo_value(combo, previous)
+                return
             self._ensure_sensor_combo_has_key(combo, custom_key)
             self._set_sensor_combo_value(combo, custom_key)
             combo.setProperty("last_valid_sensor_key", custom_key)
@@ -409,6 +438,10 @@ class OperatorConsoleQtWindow(QMainWindow):
             return
 
         if selected and self._sensor_key_is_valid_for_kind(kind, selected):
+            if self._sensor_key_assigned_elsewhere(combo, selected):
+                self.config_file_status.setText(f"Sensor key already assigned: {selected}")
+                self._set_sensor_combo_value(combo, previous)
+                return
             combo.setProperty("last_valid_sensor_key", selected)
             return
 
@@ -459,7 +492,7 @@ class OperatorConsoleQtWindow(QMainWindow):
             "YAML Files (*.yaml *.yml)",
         )
         if path:
-            self.presets_file_edit.setText(path)
+            self._set_path_field_value(self.presets_file_edit, path)
             self._load_selected_preset_file()
 
     def _browse_sensors_file(self) -> None:
@@ -545,7 +578,7 @@ class OperatorConsoleQtWindow(QMainWindow):
             return
         self._apply_form_config(config)
         stored = self.backend.get_default_presets_file()
-        self.presets_file_edit.setText(stored)
+        self._set_path_field_value(self.presets_file_edit, stored)
         self.config_file_status.setText(f"Loaded presets file: {stored}")
 
     def _save_selected_preset_file(self) -> None:
@@ -570,7 +603,7 @@ class OperatorConsoleQtWindow(QMainWindow):
             self.config_file_status.setText(str(exc))
             return
         stored = self.backend.get_default_presets_file()
-        self.presets_file_edit.setText(stored)
+        self._set_path_field_value(self.presets_file_edit, stored)
         self.config_file_status.setText(f"Saved presets file: {saved_path}")
 
     def _append_session_device_row(self, device: dict[str, object]) -> None:
@@ -667,11 +700,8 @@ class OperatorConsoleQtWindow(QMainWindow):
         self.start_session_button.clicked.connect(self._start_session)
         self.stop_session_button = QPushButton("Stop Session")
         self.stop_session_button.clicked.connect(self._stop_session)
-        self.validate_button = QPushButton("Validate")
-        self.validate_button.clicked.connect(self._validate)
         layout.addWidget(self.start_session_button, 0, 0)
         layout.addWidget(self.stop_session_button, 0, 1)
-        layout.addWidget(self.validate_button, 1, 0, 1, 2)
         return box
 
     def _build_artifacts_box(self) -> QWidget:
@@ -687,6 +717,9 @@ class OperatorConsoleQtWindow(QMainWindow):
             "conversion YAML, e.g. data_pipeline/configs/multisensor_20hz.yaml"
         )
         self.form_widgets["conversion_profile"].editingFinished.connect(self._normalize_conversion_profile_field)
+        self.form_widgets["conversion_profile"].textChanged.connect(
+            lambda _text: self._update_path_field_tooltip(self.form_widgets["conversion_profile"])  # type: ignore[arg-type]
+        )
         self.browse_conversion_profile_button = QPushButton("Browse")
         self.browse_conversion_profile_button.clicked.connect(self._browse_conversion_profile)
         conversion_profile_layout.addWidget(self.form_widgets["conversion_profile"], 1)
@@ -699,6 +732,9 @@ class OperatorConsoleQtWindow(QMainWindow):
         self.published_target_edit = QLineEdit()
         self.published_target_edit.setPlaceholderText("folder under published/, e.g. new")
         self.published_target_edit.editingFinished.connect(self._save_published_dataset_target)
+        self.published_target_edit.textChanged.connect(
+            lambda _text: self._update_path_field_tooltip(self.published_target_edit)
+        )
         self.browse_published_target_button = QPushButton("Browse")
         self.browse_published_target_button.clicked.connect(self._browse_published_dataset_target)
         publish_target_layout.addWidget(self.published_target_edit, 1)
@@ -762,7 +798,7 @@ class OperatorConsoleQtWindow(QMainWindow):
             self.config_file_status.setText(str(exc))
             return
         self.published_target_last_saved = stored
-        self.published_target_edit.setText(stored)
+        self._set_path_field_value(self.published_target_edit, stored)
 
     def _browse_conversion_profile(self) -> None:
         current = str(self._get_field("conversion_profile")).strip()
@@ -800,12 +836,12 @@ class OperatorConsoleQtWindow(QMainWindow):
         except Exception as exc:
             self.config_file_status.setText(str(exc))
             self.published_target_edit.blockSignals(True)
-            self.published_target_edit.setText(self.published_target_last_saved)
+            self._set_path_field_value(self.published_target_edit, self.published_target_last_saved)
             self.published_target_edit.blockSignals(False)
             return
         self.published_target_last_saved = stored
         self.published_target_edit.blockSignals(True)
-        self.published_target_edit.setText(stored)
+        self._set_path_field_value(self.published_target_edit, stored)
         self.published_target_edit.blockSignals(False)
 
     def _build_health_panel(self) -> QWidget:
@@ -938,17 +974,20 @@ class OperatorConsoleQtWindow(QMainWindow):
     def _load_defaults(self) -> None:
         presets_file = self.backend.get_default_presets_file()
         sensors_file = self.backend.get_default_sensors_file()
-        self.presets_file_edit.setText(presets_file)
+        self._set_path_field_value(self.presets_file_edit, presets_file)
         self._set_field("sensors_file", sensors_file)
         self._apply_form_config(self.backend.default_form_config(presets_file))
         self.published_target_last_saved = self.backend.get_published_dataset_target()
-        self.published_target_edit.setText(self.published_target_last_saved)
+        self._set_path_field_value(self.published_target_edit, self.published_target_last_saved)
         self.config_file_status.setText(f"Loaded presets file: {presets_file}")
 
     def _set_field(self, key: str, value: str | bool) -> None:
         widget = self.form_widgets[key]
         if isinstance(widget, QLineEdit):
-            widget.setText(str(value))
+            if key in {"sensors_file", "conversion_profile"}:
+                self._set_path_field_value(widget, str(value))
+            else:
+                widget.setText(str(value))
         elif isinstance(widget, QComboBox):
             index = widget.findText(str(value))
             if index >= 0:
@@ -997,9 +1036,6 @@ class OperatorConsoleQtWindow(QMainWindow):
 
     def _stop_session(self) -> None:
         self.backend.stop_session()
-
-    def _validate(self) -> None:
-        self.backend.start_validation(self._config())
 
     def _start_recording(self) -> None:
         self.backend.start_recording(self._config())
@@ -1103,13 +1139,10 @@ class OperatorConsoleQtWindow(QMainWindow):
     def _render_output(self, snapshot: dict[str, object]) -> None:
         lines = [
             f"Session state: {snapshot.get('session_state', 'idle')}",
-            f"Validation state: {snapshot.get('validation_state', 'not_run')}",
             "",
         ]
         if snapshot.get("last_action_error"):
             lines.extend(["Last error:", str(snapshot["last_action_error"]), ""])
-        if snapshot.get("last_validation_output"):
-            lines.extend(["Validate output:", str(snapshot["last_validation_output"]), ""])
         if snapshot.get("latest_recording_check_output"):
             lines.extend(["Recording check:", str(snapshot["latest_recording_check_output"]), ""])
         if snapshot.get("latest_conversion_output"):
@@ -1126,8 +1159,6 @@ class OperatorConsoleQtWindow(QMainWindow):
 
     def _update_button_states(self, snapshot: dict[str, object]) -> None:
         current_config = self._config()
-        session_state = str(snapshot.get("session_state", "idle"))
-        validation_state = str(snapshot.get("validation_state", "not_run"))
         processes = snapshot.get("processes", {})
         recorder_state = str(processes.get("recorder", {}).get("state", "stopped"))
         converter_state = str(processes.get("converter", {}).get("state", "stopped"))
@@ -1144,11 +1175,14 @@ class OperatorConsoleQtWindow(QMainWindow):
             for name in ("recorder", "converter")
         )
         session_running = core_running or work_running
-        can_record = validation_state == "passed" and core_running and recorder_state != "running"
+        can_record = (
+            self.backend._required_services_healthy(current_config)
+            and recorder_state != "running"
+            and converter_state != "running"
+        )
 
         self.start_session_button.setEnabled(not session_running)
         self.stop_session_button.setEnabled(session_running)
-        self.validate_button.setEnabled(core_running and validation_state != "running")
 
         for name, card in self.health_cards.items():
             state = str(processes.get(name, {}).get("state", "stopped"))

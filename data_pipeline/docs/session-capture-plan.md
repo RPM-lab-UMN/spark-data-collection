@@ -173,11 +173,10 @@ Example:
 1. fill session metadata
 2. choose the sensors file
 3. discover devices
-4. adjust `Record` and `Sensor` for discovered devices
+4. adjust `Record` and `Sensor Key` for discovered devices
 5. start the session
-6. validate once
-7. record multiple episodes under that same session state
-8. choose the published dataset target only when converting
+6. record multiple episodes under that same session state
+7. choose the published dataset target only when converting
 
 If the rig setup changes materially, start a new session.
 
@@ -195,11 +194,11 @@ The operator console should expose only:
 The main device table should show discovered devices only, with:
 
 - `Record`
-- `Kind`
-- `Identifier`
-- `Sensor`
+- `Device`
+- `Hardware ID`
+- `Sensor Key`
 
-`Identifier` is only the runtime display value for the discovered device:
+`Hardware ID` is only the runtime display value for the discovered device:
 
 - RealSense: serial number
 - GelSight: device path

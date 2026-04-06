@@ -66,7 +66,7 @@ Use:
 The local split is:
 
 - a user-selected sensors file
-  - usually created from [sensors.example.yaml](/home/srinivas/Desktop/pipeline/data_pipeline/configs/sensors.example.yaml)
+  - usually created from [`configs/sensors.example.yaml`](./configs/sensors.example.yaml)
   - device identity and canonical sensor keys
 - `calibration.local.json`
   - solved calibration results
