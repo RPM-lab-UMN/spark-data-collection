@@ -12,6 +12,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+import http.client
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -52,6 +53,7 @@ SETTINGS_PATH = STATE_DIR / "settings.yaml"
 TOPIC_PROBE_SCRIPT = REPO_ROOT / "data_pipeline" / "ros_topic_probe.py"
 VIEWER_REPO = WORKSPACE_ROOT / "lerobot-dataset-visualizer"
 VIEWER_BUN = Path.home() / ".bun" / "bin" / "bun"
+VIEWER_BUILD_ID = VIEWER_REPO / ".next" / "BUILD_ID"
 DEFAULT_VIEWER_BASE_URL = "http://localhost:3000"
 
 
@@ -338,10 +340,8 @@ class OperatorConsoleBackend:
             return "review_ready"
         if self.latest_dataset_id:
             return "converted"
-        if self.last_validation_ok and self._config_signature(config) == self.last_validation_signature:
-            return "ready_to_record"
         if self._required_services_healthy(config):
-            return "ready_for_dry_run"
+            return "ready_to_record"
         if self._required_service_red(config):
             return "degraded"
         if any(proc.state == "running" for proc in self.processes.values()):
@@ -459,9 +459,6 @@ class OperatorConsoleBackend:
         self.last_action_error = ""
         if not self._required_services_healthy(config):
             self.last_action_error = "Required services are not healthy enough to record."
-            return
-        if not self.last_validation_ok or self.last_validation_signature != self._config_signature(config):
-            self.last_action_error = "Run Validate successfully for the current configuration before recording."
             return
 
         episode_id = make_episode_id()
@@ -632,6 +629,10 @@ class OperatorConsoleBackend:
             raise RuntimeError(f"Viewer repo not found: {VIEWER_REPO}")
         if not VIEWER_BUN.exists():
             raise RuntimeError(f"Bun not found: {VIEWER_BUN}")
+        if not VIEWER_BUILD_ID.exists():
+            raise RuntimeError(
+                "Viewer production build is missing. Run ./data_pipeline/setup_viewer_env.sh first."
+            )
         viewer_base_url = DEFAULT_VIEWER_BASE_URL
         dataset_url = f"{viewer_base_url}/datasets"
         return (
@@ -680,7 +681,7 @@ class OperatorConsoleBackend:
         try:
             with opener.open(request, timeout=timeout_s) as response:
                 return 200 <= int(getattr(response, "status", 200)) < 400
-        except (urllib.error.URLError, TimeoutError, ValueError):
+        except (urllib.error.URLError, TimeoutError, ValueError, OSError, http.client.HTTPException):
             return False
 
     def _required_services_healthy(self, config: dict[str, Any]) -> bool:

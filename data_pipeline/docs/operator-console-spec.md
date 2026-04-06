@@ -5,7 +5,7 @@
 Build a lab-facing console for:
 
 - session setup
-- readiness validation
+- health checks
 - raw recording
 - conversion
 - viewer launch
@@ -33,13 +33,12 @@ See:
 2. optionally load a presets file
 3. choose the sensors file
 4. click `Discover Devices`
-5. set `Record` and `Sensor` for discovered devices
+5. set `Record` and `Sensor Key` for discovered devices
 6. optionally save the current presets file or sensors file for later reuse
 7. click `Start Session`
-8. click `Validate`
-9. record one or more episodes
-10. convert
-11. open viewer
+8. record one or more episodes
+9. convert
+10. open viewer
 
 The operator should not need to rebuild the rig model every episode.
 
@@ -87,20 +86,20 @@ It must show discovered devices only.
 Columns:
 
 - `Record`
-- `Kind`
-- `Identifier`
-- `Sensor`
+- `Device`
+- `Hardware ID`
+- `Sensor Key`
 
 Rules:
 
-- `Kind` and `Identifier` are read-only
+- `Device` and `Hardware ID` are read-only
 - `Record` is editable
-- `Sensor` is editable
+- `Sensor Key` is editable
 - sensor-key choices are filtered by device kind
-- the `Sensor` dropdown may include `Custom...`:
+- the `Sensor Key` dropdown may include `Custom...`:
   - it should accept a manually entered canonical sensor key
   - the key must validate against the shared topic-prefix grammar for that device kind
-- `Identifier` is only a display field:
+- `Hardware ID` is only a display field:
   - RealSense rows show the device serial number
   - GelSight rows show the device path
   - it is not a second canonical naming layer

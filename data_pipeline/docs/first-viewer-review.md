@@ -102,7 +102,7 @@ In that case, go back to:
 and rerun:
 
 ```bash
-cd /home/srinivas/Desktop/pipeline
+cd ~/spark-workspace/spark-data-collection
 ./data_pipeline/setup_viewer_env.sh
 ```
 
@@ -126,7 +126,7 @@ the first response should be:
 If you still need a manual check, verify the local dataset metadata exists:
 
 ```bash
-cd /home/srinivas/Desktop/pipeline
+cd ~/spark-workspace/spark-data-collection
 ls published/<dataset_id>/meta/info.json
 ls published/<dataset_id>/meta/spark_conversion
 ```
@@ -139,7 +139,7 @@ problem is in the dataset or the console integration, you can start the viewer
 manually from the sibling repo:
 
 ```bash
-cd /home/srinivas/Desktop/pipeline/../lerobot-dataset-visualizer
+cd ~/spark-workspace/lerobot-dataset-visualizer
 env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u all_proxy -u NO_PROXY -u no_proxy \
 NEXT_PUBLIC_DATASET_URL=http://localhost:3000/datasets \
 DATASET_URL=http://localhost:3000/datasets \
