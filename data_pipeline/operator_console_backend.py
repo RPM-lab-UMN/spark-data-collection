@@ -13,6 +13,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+import urllib.parse
 import http.client
 from collections import deque
 from dataclasses import dataclass, field
@@ -52,11 +53,10 @@ STATE_DIR = REPO_ROOT / ".operator_console"
 CAPTURE_PLAN_DIR = STATE_DIR / "capture_plans"
 SETTINGS_PATH = STATE_DIR / "settings.yaml"
 TOPIC_PROBE_SCRIPT = REPO_ROOT / "data_pipeline" / "ros_topic_probe.py"
+DATASET_SERVER_PY = REPO_ROOT / "data_pipeline" / "local_dataset_server.py"
 VIEWER_REPO = WORKSPACE_ROOT / "lerobot-dataset-visualizer"
 VIEWER_BUN = Path.home() / ".bun" / "bin" / "bun"
 VIEWER_BUILD_ID = VIEWER_REPO / ".next" / "BUILD_ID"
-VIEWER_DATASETS_ROOT = VIEWER_REPO / "public" / "datasets" / "local"
-DEFAULT_VIEWER_BASE_URL = "http://localhost:3000"
 
 
 @dataclass
@@ -92,6 +92,7 @@ class OperatorConsoleBackend:
             "gelsight_contract": ManagedProcess("gelsight_contract", "GelSight"),
             "recorder": ManagedProcess("recorder", "Recorder"),
             "converter": ManagedProcess("converter", "Converter"),
+            "dataset_server": ManagedProcess("dataset_server", "Dataset Server"),
             "viewer_server": ManagedProcess("viewer_server", "Viewer Server"),
         }
         self.process_lock = threading.Lock()
@@ -533,7 +534,7 @@ class OperatorConsoleBackend:
         self.last_action_error = ""
         try:
             dataset_id, episode_index, url = self._resolve_viewer_target(config)
-            self._ensure_viewer_server(config, dataset_id, episode_index)
+            self._ensure_viewer_server(dataset_id)
         except RuntimeError as exc:
             self.last_action_error = str(exc)
             return
@@ -608,7 +609,7 @@ class OperatorConsoleBackend:
         return None
 
     def _resolve_viewer_target(self, config: dict[str, Any]) -> tuple[str, int, str]:
-        viewer_base_url = DEFAULT_VIEWER_BASE_URL
+        viewer_base_url = self._viewer_base_url()
         dataset_id = self._find_viewer_dataset_id(config)
         if not dataset_id:
             checked = [
@@ -626,7 +627,7 @@ class OperatorConsoleBackend:
         url = f"{viewer_base_url}/local/{dataset_id}/episode_{episode_index}"
         return dataset_id, episode_index, url
 
-    def _build_viewer_server_command(self, config: dict[str, Any], dataset_id: str, episode_index: int) -> str:
+    def _build_viewer_server_command(self) -> str:
         if not VIEWER_REPO.exists():
             raise RuntimeError(f"Viewer repo not found: {VIEWER_REPO}")
         if not VIEWER_BUN.exists():
@@ -635,50 +636,69 @@ class OperatorConsoleBackend:
             raise RuntimeError(
                 "Viewer production build is missing. Run ./data_pipeline/setup_viewer_env.sh first."
             )
-        viewer_base_url = DEFAULT_VIEWER_BASE_URL
-        dataset_url = f"{viewer_base_url}/datasets"
+        dataset_url = f"{self._dataset_base_url()}/datasets"
         return (
             f"cd {shlex.quote(str(VIEWER_REPO))} && "
             "env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY "
             "-u ALL_PROXY -u all_proxy -u NO_PROXY -u no_proxy "
-            f"NEXT_PUBLIC_DATASET_URL={shlex.quote(dataset_url)} "
+            f"PORT={shlex.quote(str(self._viewer_port()))} "
             f"DATASET_URL={shlex.quote(dataset_url)} "
-            f"REPO_ID={shlex.quote(f'local/{dataset_id}')} "
-            f"EPISODES={shlex.quote(str(episode_index))} "
             f"{shlex.quote(str(VIEWER_BUN))} start"
         )
+
+    def _build_dataset_server_command(self) -> str:
+        return (
+            f"{shlex.quote(SYSTEM_PYTHON)} {shlex.quote(str(DATASET_SERVER_PY))} "
+            f"--root {shlex.quote(str(self._published_root()))} "
+            "--host 127.0.0.1 "
+            f"--port {shlex.quote(str(self._dataset_port()))}"
+        )
+
+    def _local_base_url(self, env_name: str, default_port: int) -> str:
+        override = os.environ.get(env_name, "").strip()
+        if override:
+            return override.rstrip("/")
+        return f"http://127.0.0.1:{default_port}"
+
+    def _default_local_port(self, base: int) -> int:
+        uid = os.getuid()
+        port = base + uid
+        if 1024 <= port <= 65535:
+            return port
+        return base + (uid % 20000)
+
+    def _viewer_base_url(self) -> str:
+        return self._local_base_url("PIPELINE_VIEWER_BASE_URL", self._default_local_port(20000))
+
+    def _dataset_base_url(self) -> str:
+        return self._local_base_url("PIPELINE_DATASET_BASE_URL", self._default_local_port(30000))
+
+    def _port_from_base_url(self, url: str) -> int:
+        parsed = urllib.parse.urlparse(url)
+        if parsed.port is not None:
+            return parsed.port
+        if parsed.scheme == "http":
+            return 80
+        if parsed.scheme == "https":
+            return 443
+        raise RuntimeError(f"URL must include a valid port: {url}")
+
+    def _viewer_port(self) -> int:
+        return self._port_from_base_url(self._viewer_base_url())
+
+    def _dataset_port(self) -> int:
+        return self._port_from_base_url(self._dataset_base_url())
 
     def _viewer_dataset_root(self, dataset_id: str) -> Path:
         return REPO_ROOT / "published" / dataset_id
 
-    def _viewer_dataset_mount(self, dataset_id: str) -> Path:
-        return VIEWER_DATASETS_ROOT / dataset_id / "resolve" / "main"
+    def _dataset_info_url(self, dataset_id: str) -> str:
+        return f"{self._dataset_base_url()}/datasets/local/{dataset_id}/resolve/main/meta/info.json"
 
-    def _viewer_dataset_info_url(self, viewer_base_url: str, dataset_id: str) -> str:
-        return f"{viewer_base_url}/datasets/local/{dataset_id}/resolve/main/meta/info.json"
-
-    def _ensure_viewer_dataset_mount(self, dataset_id: str) -> bool:
-        dataset_root = self._viewer_dataset_root(dataset_id)
-        if not (dataset_root / "meta" / "info.json").exists():
-            raise RuntimeError(f"Published dataset info not found: {dataset_root / 'meta' / 'info.json'}")
-
-        mount_path = self._viewer_dataset_mount(dataset_id)
-        mount_path.parent.mkdir(parents=True, exist_ok=True)
-
-        if mount_path.exists() or mount_path.is_symlink():
-            if mount_path.is_symlink() and mount_path.resolve() == dataset_root.resolve():
-                return False
-            raise RuntimeError(
-                f"Viewer dataset mount already exists and does not match {dataset_root}: {mount_path}"
-            )
-
-        mount_path.symlink_to(dataset_root.resolve(), target_is_directory=True)
-        return True
-
-    def _viewer_listener_pid(self) -> int | None:
+    def _listener_pid(self, port: int, cwd_hint: Path) -> int | None:
         try:
             result = subprocess.run(
-                ["ss", "-ltnp", "( sport = :3000 )"],
+                ["ss", "-ltnp", f"( sport = :{port} )"],
                 capture_output=True,
                 text=True,
                 timeout=2.0,
@@ -696,12 +716,12 @@ class OperatorConsoleBackend:
                 cwd = Path(os.readlink(f"/proc/{pid}/cwd"))
             except OSError:
                 continue
-            if cwd.resolve() == VIEWER_REPO.resolve():
+            if cwd.resolve() == cwd_hint.resolve():
                 return pid
         return None
 
-    def _stop_existing_viewer_listener(self) -> None:
-        pid = self._viewer_listener_pid()
+    def _stop_existing_listener(self, port: int, cwd_hint: Path) -> None:
+        pid = self._listener_pid(port, cwd_hint)
         if pid is None:
             return
         try:
@@ -710,7 +730,7 @@ class OperatorConsoleBackend:
             return
         deadline = time.time() + 5.0
         while time.time() < deadline:
-            if self._viewer_listener_pid() is None:
+            if self._listener_pid(port, cwd_hint) is None:
                 return
             time.sleep(0.1)
         try:
@@ -718,16 +738,21 @@ class OperatorConsoleBackend:
         except ProcessLookupError:
             return
 
-    def _ensure_viewer_server(self, config: dict[str, Any], dataset_id: str, episode_index: int) -> None:
-        viewer_base_url = DEFAULT_VIEWER_BASE_URL
-        self._ensure_viewer_dataset_mount(dataset_id)
-        command = self._build_viewer_server_command(config, dataset_id, episode_index)
-        dataset_info_url = self._viewer_dataset_info_url(viewer_base_url, dataset_id)
-        process = self.processes["viewer_server"]
+    def _ensure_managed_http_server(
+        self,
+        *,
+        process_name: str,
+        command: str,
+        url: str,
+        port: int,
+        cwd_hint: Path,
+        timeout_s: float,
+    ) -> None:
+        process = self.processes[process_name]
         process_running = process.process is not None and process.process.poll() is None
 
         if process_running and process.command != command:
-            self._stop_process("viewer_server")
+            self._stop_process(process_name)
             deadline = time.time() + 5.0
             while time.time() < deadline:
                 if process.process is None or process.process.poll() is not None:
@@ -735,21 +760,48 @@ class OperatorConsoleBackend:
                 time.sleep(0.1)
 
         if process.process is not None and process.process.poll() is None and process.command == command:
-            if self._url_reachable(dataset_info_url, timeout_s=1.5):
+            if self._url_reachable(url, timeout_s=1.5):
                 return
 
-        if self._url_reachable(dataset_info_url, timeout_s=1.5):
-            return
+        if self._url_reachable(url, timeout_s=1.5):
+            listener_pid = self._listener_pid(port, cwd_hint)
+            if listener_pid is not None:
+                return
+            raise RuntimeError(f"Port {port} is already serving {url} from an unmanaged process.")
 
-        self._stop_existing_viewer_listener()
-
-        self._start_process("viewer_server", command)
-        deadline = time.time() + 15.0
+        self._stop_existing_listener(port, cwd_hint)
+        self._start_process(process_name, command)
+        deadline = time.time() + timeout_s
         while time.time() < deadline:
-            if self._url_reachable(dataset_info_url, timeout_s=1.5):
+            if self._url_reachable(url, timeout_s=1.5):
                 return
             time.sleep(0.25)
-        raise RuntimeError(f"Viewer dataset did not become reachable: {dataset_info_url}")
+        raise RuntimeError(f"{self.processes[process_name].display_name} did not become reachable: {url}")
+
+    def _ensure_dataset_server(self) -> None:
+        self._ensure_managed_http_server(
+            process_name="dataset_server",
+            command=self._build_dataset_server_command(),
+            url=f"{self._dataset_base_url()}/healthz",
+            port=self._dataset_port(),
+            cwd_hint=REPO_ROOT,
+            timeout_s=10.0,
+        )
+
+    def _ensure_viewer_server(self, dataset_id: str) -> None:
+        self._ensure_dataset_server()
+        dataset_info_url = self._dataset_info_url(dataset_id)
+        if not self._url_reachable(dataset_info_url, timeout_s=1.5):
+            raise RuntimeError(f"Viewer dataset did not become reachable: {dataset_info_url}")
+
+        self._ensure_managed_http_server(
+            process_name="viewer_server",
+            command=self._build_viewer_server_command(),
+            url=self._viewer_base_url(),
+            port=self._viewer_port(),
+            cwd_hint=VIEWER_REPO,
+            timeout_s=15.0,
+        )
 
     def _url_reachable(self, url: str, timeout_s: float = 2.0) -> bool:
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))

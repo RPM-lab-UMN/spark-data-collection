@@ -71,7 +71,7 @@ The operator console still owns viewer startup at runtime.
 `Open Viewer` in the operator console:
 
 - checks the current published dataset target
-- ensures the local dataset mount for that folder exists
+- ensures the local dataset server is running
 - starts the viewer server if needed
 - opens the resolved local episode URL
 
@@ -82,8 +82,12 @@ production bundle.
 The supported viewer contract is local-only:
 
 - the viewer server runs on the same machine as the operator console
+- the dataset server runs on the same machine as the operator console
 - the browser is opened on that same machine
-- the viewer base URL is always `http://localhost:3000`
+- the viewer base URL defaults to an account-local localhost port
+- you can override it with `PIPELINE_VIEWER_BASE_URL` if you need a specific host or port
+- the dataset server base URL also defaults to an account-local localhost port
+- you can override it with `PIPELINE_DATASET_BASE_URL` if you need a specific host or port
 
 ## Next Step
 

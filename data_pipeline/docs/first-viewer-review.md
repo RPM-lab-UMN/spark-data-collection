@@ -62,7 +62,7 @@ on the `Converter` card.
 What should happen:
 
 - the backend checks that the published dataset exists
-- it ensures the local viewer mount for that dataset is available
+- it ensures the local dataset server is running
 - it starts the local viewer server if needed
 - it opens the resolved local episode URL for the latest episode in that dataset
 
@@ -70,10 +70,10 @@ The supported workflow is local-only:
 
 - the viewer server runs on this machine
 - the browser also runs on this machine
-- the viewer URL is `http://localhost:3000/...`
+- the viewer URL uses this account's local viewer port
 
 You do **not** need to manually start the viewer server in the normal workflow.
-You also do **not** need to manually create any local viewer dataset mount.
+You also do **not** need to manually expose the dataset to the viewer.
 
 
 ## 3. What Success Looks Like
@@ -123,10 +123,10 @@ cd ~/spark-workspace/spark-data-collection
 
 Known local issues we have already seen:
 
-- stale viewer process from a different dataset target
 - missing production build marker:
   - `.next/BUILD_ID`
 - proxy environment variables interfering with local dataset requests
+- wrong or stale published dataset target in the operator console
 
 The normal `Open Viewer` path already handles the local proxy/runtime setup, so
 the first response should be:
@@ -153,17 +153,17 @@ manually from the sibling repo.
 Important:
 
 - this only makes sense after at least one `Open Viewer` attempt
-- the console path is what prepares the local dataset mount for the selected folder
+- the console path is what starts both local services for the selected dataset
+- replace `<viewer_base_url>` with the URL shown in the operator console if you are not using the default account-local port
+- replace `<dataset_base_url>` with the local dataset-server base URL if you overrode it
 
 Manual start:
 
 ```bash
 cd ~/spark-workspace/lerobot-dataset-visualizer
 env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u all_proxy -u NO_PROXY -u no_proxy \
-NEXT_PUBLIC_DATASET_URL=http://localhost:3000/datasets \
-DATASET_URL=http://localhost:3000/datasets \
-REPO_ID=local/<dataset_id> \
-EPISODES=0 \
+DATASET_URL=<dataset_base_url>/datasets \
+PORT=<viewer_port> \
 ~/.bun/bin/bun start
 ```
 
