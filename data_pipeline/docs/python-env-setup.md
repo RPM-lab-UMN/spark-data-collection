@@ -120,6 +120,8 @@ on `PATH` after the environment is ready:
 ```bash
 mkdir -p ~/bin
 ln -sfn ~/spark-workspace/spark-data-collection/collect ~/bin/collect
+echo 'export PATH="$HOME/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
 ```
 
 ## Why ROS Still Needs To Be Sourced

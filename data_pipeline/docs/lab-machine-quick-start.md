@@ -76,6 +76,8 @@ If you want the short command name `collect`, expose that repo-owned script on
 ```bash
 mkdir -p ~/bin
 ln -sfn ~/spark-workspace/spark-data-collection/collect ~/bin/collect
+echo 'export PATH="$HOME/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
 ```
 
 ## Recommended Path On The Shared Lab Machine

@@ -15,7 +15,8 @@ Current supported contract:
 
 - the viewer server runs on the same machine as the operator console
 - the browser opens on that same machine
-- the base URL is `http://localhost:3000`
+- the base URL defaults to an account-local localhost port
+- `PIPELINE_VIEWER_BASE_URL` can override the host and port when needed
 
 This local-only assumption removed a lot of confusion around hostname choice and
 stale environment-specific settings.
@@ -36,7 +37,7 @@ normal review.
 That is why `Open Viewer` owns:
 
 - resolving the current published dataset target
-- preparing the local dataset mount for that target
+- ensuring the local dataset server is running
 - starting or restarting the viewer server if needed
 - opening the resolved episode URL
 
@@ -61,56 +62,39 @@ That boundary matters because:
 
 ## Current Local Dataset Serving Model
 
-The current local viewer integration still uses a compatibility layer under the
-viewer repo's `public/` tree so the frontend can read local published datasets
-through the expected URL shape.
+The current local viewer integration uses two explicit local servers:
 
-The exact current mount is:
+- a generic viewer server from `lerobot-dataset-visualizer`
+- a read-only dataset server owned by `spark-data-collection`
 
-- `lerobot-dataset-visualizer/public/datasets/local/<dataset_id>/resolve/main`
-  -> symlink to
+The dataset server exposes published datasets directly from:
+
 - `spark-data-collection/published/<dataset_id>`
+
+through the URL shape the viewer expects:
+
+- `/datasets/local/<dataset_id>/resolve/main/...`
 
 And the backend starts the viewer with:
 
-- `NEXT_PUBLIC_DATASET_URL=http://localhost:3000/datasets`
-- `DATASET_URL=http://localhost:3000/datasets`
+- `DATASET_URL=<dataset_base_url>/datasets`
 
-Operationally, the important current truth is:
+This keeps the dataset truth in one place and removes the hidden mirror state
+that previously lived inside the viewer repo.
 
-- users should not manually create or manage that mount state
-- `Open Viewer` should ensure the mount exists for the selected dataset
-
-This keeps the fragile part of the contract in one place instead of leaving it
-as tribal knowledge.
+By default, each Unix account gets its own local viewer port and its own local
+dataset-server port. That prevents the cross-account failure mode where two
+users on the same machine silently reuse the same `localhost` service.
 
 
-## Current Design Debt
+## Remaining Design Debt
 
-The viewer integration still has real design debt:
+The viewer path is cleaner now, but some real design debt remains:
 
-- local dataset exposure is more implicit than it should be
 - the contract still spans two sibling repos
-- the frontend toolchain introduces a separate per-account setup surface
-
-So the current design is:
-
-- workable
-- documented
-- less fragile than before
-
-but not yet a first-principles local dataset-serving architecture.
-
-
-## Why The Current Design Still Exists
-
-The existing viewer repo already knew how to read dataset files from a URL
-shape similar to Hugging Face dataset paths.
-
-The cheapest bridge for local use was to make local published datasets available
-through that shape rather than redesign the viewer data layer immediately.
-
-That was a pragmatic choice, not a claim that the architecture is perfect.
+- the frontend toolchain still introduces a separate per-account setup surface
+- the viewer is still adapted from a Hugging Face-oriented app rather than
+  designed natively for this local pipeline
 
 
 ## Design Rule
@@ -118,7 +102,7 @@ That was a pragmatic choice, not a claim that the architecture is perfect.
 Any future viewer work should preserve these operator-facing truths:
 
 - `Open Viewer` is the one-click review entrypoint
-- the operator should not think about mount plumbing
+- the operator should not think about dataset-serving plumbing
 - published datasets remain the source artifact being reviewed
 
 If the implementation changes later, those user-facing properties should stay.
