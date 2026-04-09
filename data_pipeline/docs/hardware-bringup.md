@@ -1,6 +1,6 @@
 # Hardware Bring-Up
 
-This page is the normal bring-up flow for a new user on a fresh machine.
+This page is the normal bring-up flow on the already-prepared collection machine.
 
 The goal is simple:
 
@@ -10,17 +10,16 @@ The goal is simple:
 
 ## Before You Start
 
-Finish these setup pages first:
+Finish one of these setup paths first:
 
-- [workspace-setup.md](./workspace-setup.md)
-- [system-setup.md](./system-setup.md)
-- [python-env-setup.md](./python-env-setup.md)
+- [Lab Machine Quick Start](./lab-machine-quick-start.md) for `shared_account`
+- [Personal Account Setup](./personal-account-setup.md) for your own Linux account
 
 Notes:
 
-- this page assumes the shared `.venv` already exists
-- this page assumes the pinned local `librealsense v2.54.2` runtime has already
-  been prepared
+- this page assumes the current account and workspace were already provisioned
+- this page assumes the repo-local `.venv` already exists
+- this page assumes the pinned local `librealsense v2.54.2` runtime has already been prepared
 - the viewer is **not** required for hardware bring-up
 
 
@@ -38,13 +37,19 @@ Before launching anything, check the rig physically:
 If you are using multiple RealSense cameras, keep them on the intended USB
 controller layout. Do not assume that any two convenient ports are equivalent.
 
+Use:
+
+- [USB Port and Controller Mapping](./usb-port-and-controller-mapping.md)
+
+if you need to verify or remap the machine.
+
 
 ## 2. Start From The Example Files
 
 The operator console now falls back to the checked-in example files on first launch:
 
-- [operator_console_presets.example.yaml](../configs/operator_console_presets.example.yaml)
-- [sensors.example.yaml](../configs/sensors.example.yaml)
+- `data_pipeline/configs/operator_console_presets.example.yaml`
+- `data_pipeline/configs/sensors.example.yaml`
 
 You do **not** need to create `sensors.local.yaml` before the GUI is usable.
 
@@ -65,14 +70,17 @@ Important:
 
 If this is a new camera setup or the rig has changed, plan to run:
 
-- [calibration.md](./calibration.md)
+- [Calibration](./calibration.md)
 
 before serious data collection.
 
 
 ## 3. Start The Operator Console
 
-From the repository root:
+Normally this page starts after `collect` already opened the operator console from [Lab Machine Quick Start](./lab-machine-quick-start.md).
+
+If you are using your own account, or the shared account is not provisioned yet,
+start the console manually from the repository root:
 
 ```bash
 source /opt/ros/jazzy/setup.bash
@@ -288,4 +296,4 @@ At that point, the rig is ready for a first smoke-test recording.
 
 Next:
 
-- [first-raw-demo.md](./first-raw-demo.md)
+- [First Raw Demo](./first-raw-demo.md)

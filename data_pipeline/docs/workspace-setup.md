@@ -1,6 +1,23 @@
 # Workspace Setup
 
-This page defines the exact repository layout a new lab member should create on a fresh machine.
+This is a setup page for anyone who needs their own workspace layout.
+
+Use it when you are:
+
+- setting up your own Linux account on the existing collection machine
+- rebuilding the shared account workspace
+- provisioning the dedicated collection machine from scratch
+
+Collection-only users on `shared_account` should start with:
+
+- [Lab Machine Quick Start](./lab-machine-quick-start.md)
+
+Lab members using their own account on the same machine should usually start
+with:
+
+- [Personal Account Setup](./personal-account-setup.md)
+
+This page defines the exact repository layout the maintained workspace should use.
 
 Use one shared workspace directory with these sibling checkouts:
 
@@ -55,9 +72,9 @@ After cloning, the main working repo is:
 cd ~/spark-workspace/spark-data-collection
 ```
 
-## Current Code Assumptions
+## Code Assumptions
 
-The pipeline currently assumes these sibling paths relative to `spark-data-collection/`:
+The pipeline assumes these sibling paths relative to `spark-data-collection/`:
 
 - `../lerobot`
 - `../gsrobotics`
@@ -108,8 +125,8 @@ If someone only needs to use the viewer, cloning the lab fork is enough. The `up
 
 Once this workspace layout exists, move on to:
 
-- [system-setup.md](./system-setup.md)
-- [viewer-setup.md](./viewer-setup.md) if the user needs local dataset viewing
-- [python-env-setup.md](./python-env-setup.md)
-- RealSense runtime setup
-- hardware bring-up
+- [System Setup](./system-setup.md) if the machine itself is not prepared yet
+- [Python Environment Setup](./python-env-setup.md)
+- [Viewer Setup](./viewer-setup.md) if this account needs local dataset viewing
+- [Personal Account Setup](./personal-account-setup.md) if you are following the personal-account path
+- [Lab Machine Quick Start](./lab-machine-quick-start.md) once the shared account is provisioned

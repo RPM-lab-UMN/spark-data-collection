@@ -1,0 +1,38 @@
+:root {
+  --md-default-fg-color: #333333;
+  --md-default-bg-color: #ffffff;
+  --md-primary-fg-color: #7a0019;
+  --md-primary-fg-color--light: #900021;
+  --md-primary-fg-color--dark: #5b0013;
+  --md-accent-fg-color: #7a0019;
+  --md-typeset-a-color: #7a0019;
+}
+
+.md-header {
+  border-bottom: 4px solid #ffcc33;
+  box-shadow: none;
+}
+
+.md-search__form {
+  background-color: #ffffff;
+  border: 1px solid #333333;
+}
+
+.md-search__input,
+.md-search__input::placeholder {
+  color: #333333;
+}
+
+.md-search__icon {
+  color: #7a0019;
+}
+
+.md-typeset h2 {
+  border-bottom: 2px solid #ffcc33;
+  padding-bottom: 0.15rem;
+}
+
+.md-nav--primary .md-nav__link--active {
+  border-left: 3px solid #ffcc33;
+  padding-left: 0.6rem;
+}
