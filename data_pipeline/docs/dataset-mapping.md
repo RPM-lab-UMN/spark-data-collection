@@ -1,16 +1,31 @@
-# Dataset Mapping
+# Published Dataset Contract
 
 ## Purpose
 
-This document defines how raw episode bags are converted into the published V2 LeRobot dataset.
+This document defines how raw episode bags are converted into the published
+LeRobot dataset.
 
 The raw bag preserves asynchronous truth.
 The published dataset is a fixed-rate aligned view of that raw data.
 
 
+## Core Design Rule
+
+The published dataset is derived from the raw episode.
+
+That means:
+
+- raw recording preserves asynchronous source truth
+- conversion builds one explicit aligned learning view
+- published artifacts must not silently redefine what the raw episode meant
+
+This is why the published layer is allowed to be stricter and smaller than the
+raw layer without pretending the raw layer never existed.
+
+
 ## Conversion Profile
 
-V2 now uses one checked-in conversion profile at `20 Hz`:
+The current pipeline uses one checked-in conversion profile at `20 Hz`:
 
 - `multisensor_20hz`
 
@@ -26,12 +41,22 @@ It does not hardcode one fixed embodiment or one fixed sensor set.
 Current implementation note:
 
 - raw recording uses `multisensor_20hz.yaml` plus the session's active-arm set and enabled sensor keys
-- conversion uses `multisensor_20hz.yaml` plus the manifest's active-arm set and recorded sensor keys
+- conversion uses `multisensor_20hz.yaml` plus the manifest's active-arm set and
+  the `sensor_key` values from `sensors.devices`
 - `--profile` is now overriding the generic conversion policy, not choosing between arm-specific profile files
 
 ### Why
 
 If GelSight is a first-class published modality, then 20 Hz is the most honest default common rate. A faster published rate would either duplicate tactile frames too aggressively or claim more temporal precision than the raw streams actually support.
+
+The checked-in policy is intentionally generic:
+
+- one conversion policy
+- schema derived from manifest active arms and the `sensor_key` values under
+  `sensors.devices`
+
+That is simpler and more honest than maintaining near-copy profile files only to
+encode embodiment differences.
 
 
 ## Raw vs Published
@@ -52,13 +77,34 @@ Rules:
 The storage cost of zero-filling an inactive arm is small, but the semantic cost is not. It mixes single-arm and bimanual behavior into one schema and makes downstream training depend on implicit padding conventions instead of explicit embodiment choice.
 
 
+## Published Folder Contract
+
+One published folder must represent one coherent dataset contract.
+
+In practice that means:
+
+- one effective low-dimensional schema
+- one image/depth field set
+- one embodiment and sensor-layout interpretation
+
+Do not append episodes with incompatible published schemas into the same folder.
+
+If the effective schema changes, the correct action is:
+
+- use a new published folder
+
+not:
+
+- silently append and hope downstream code tolerates shape drift
+
+
 ## Effective Schema Resolution
 
 For each raw episode:
 
 1. Read the generic conversion profile.
 2. Read the manifest active-arm set.
-3. Read the recorded sensor keys from the manifest.
+3. Read the recorded sensor keys from `sensors.devices`.
 4. Derive the effective published schema from those two pieces of episode truth.
 5. Fail conversion if the arm presence is ambiguous or inconsistent.
 
@@ -86,9 +132,25 @@ For each raw episode:
 This creates one explicit frame timeline for the published episode. The timeline is no longer implicit in whichever modality happened to be processed first. This is the cleanest form for LeRobot and for downstream learning code.
 
 
+## Teleop Activity And Valid Published Frames
+
+`/spark/session/teleop_active` is now part of the raw conversion contract for
+supported episodes.
+
+Why:
+
+- pedal-off spans are intentional inactivity, not missing-action failures
+- published conversion should remove those spans from the usable interval
+- missing activity should fail conversion instead of inventing fallback behavior
+
+So the published dataset is not just “raw topics sampled at 20 Hz.” It is the
+usable active teleoperation interval sampled at 20 Hz under explicit validity
+rules.
+
+
 ## Published Observation Schema
 
-V2 publishes:
+The published dataset includes:
 
 - `observation.state`
 - `action`
@@ -118,6 +180,26 @@ For arm-dependent low-dimensional features, the effective schema uses a fixed ar
 That ordering must not change across episodes.
 
 If only one arm is active, only that arm's low-dimensional slice appears in the effective schema.
+
+
+## Published Provenance
+
+The published dataset keeps a copy of the raw source snapshot per episode under:
+
+- `meta/spark_source/<episode_id>/episode_manifest.json`
+- `meta/spark_source/<episode_id>/notes.md`
+
+And the converter writes episode-level conversion artifacts under:
+
+- `meta/spark_conversion/<episode_id>/diagnostics.json`
+- `meta/spark_conversion/<episode_id>/conversion_summary.json`
+- `meta/spark_conversion/<episode_id>/effective_profile.yaml`
+
+This is deliberate.
+
+Dataset-level metadata alone is not enough to reconstruct the exact episode
+truth later. The copied raw snapshot keeps the learning artifact tied back to
+the original source-of-truth episode.
 
 
 ## Observation State Definition
@@ -205,7 +287,9 @@ The current bimanual `multisensor_20hz` profile uses this flat `action` order:
 
 ### Why
 
-The V2 action is the command sent by the teleoperation/runtime stack. This is more stable and more semantically honest than silently replacing action with a derived delta later in the pipeline.
+The published `action` is the command sent by the teleoperation/runtime stack.
+This is more stable and more semantically honest than silently replacing action
+with a derived delta later in the pipeline.
 
 For both arms:
 
@@ -338,7 +422,8 @@ Silent filling of large gaps hides real collection problems and makes the datase
 
 ## Raw-Only Modalities
 
-The following topics remain raw-only in V2 unless the effective schema explicitly publishes them:
+The following topics remain raw-only unless the effective schema explicitly
+publishes them:
 
 - `/spark/session/teleop_active`
 - optional point cloud or debugging topics
@@ -354,7 +439,7 @@ These topics are valuable to preserve, but they complicate the first published d
 
 ## Multi-Sensor Rules
 
-V2 supports:
+The current pipeline supports:
 
 - multiple RealSense sensors
 - multiple GelSight sensors

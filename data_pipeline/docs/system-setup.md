@@ -1,7 +1,22 @@
 # ROS And System Setup
 
-This page defines the Ubuntu and ROS packages a new lab member should install
-before creating the Python environment or bringing up hardware.
+This page defines the Ubuntu and ROS packages an admin or maintainer should
+install before provisioning the shared collection account or bringing up
+hardware on a fresh machine.
+
+This is an admin-only page.
+
+Use it when:
+
+- provisioning a fresh machine
+- rebuilding the machine-level base install
+- repairing missing system packages on the dedicated collection machine
+
+For the normal user path on the already-prepared lab machine, do **not** start
+here. Start with:
+
+- [Lab Machine Quick Start](./lab-machine-quick-start.md)
+- [Personal Account Setup](./personal-account-setup.md) if you are using your own account on the same machine
 
 The current target platform is:
 
@@ -71,6 +86,36 @@ What these are for:
 - `libxcb-cursor0`
   - required for the Qt operator console on Ubuntu/X11
 
+## Shared Collection Account Provisioning
+
+If normal data collection happens through a shared Linux account such as:
+
+- `shared_account`
+
+that account should have device-access group membership before anyone tries to use the rig.
+
+On this machine, the important groups are:
+
+- `dialout`
+  - required for SPARK serial devices under `/dev/ttyUSB*`
+- `plugdev`
+  - useful for camera and removable-device access on this machine
+- `video`
+  - useful for camera access on this machine
+
+Provision the shared account with:
+
+```bash
+sudo usermod -aG dialout,plugdev,video shared_account
+```
+
+Then log out and log back in to that account before testing device access.
+
+The point is:
+
+- normal operators should not need `sudo`
+- the shared collection account should already have the right device-group access
+
 ## ROS Jazzy Packages Required By This Repo
 
 Install the ROS packages the current pipeline depends on directly:
@@ -123,7 +168,7 @@ sudo apt-get install -y nodejs npm
 
 The current viewer setup path will install `bun` separately. See:
 
-- [viewer-setup.md](./viewer-setup.md)
+- [Viewer Setup](./viewer-setup.md)
 
 ## Practical Check
 
@@ -147,6 +192,7 @@ apt-cache show ros-jazzy-rosbag2-storage-mcap
 
 After system setup is done, move on to:
 
-- [workspace-setup.md](./workspace-setup.md) if the workspace does not exist yet
-- [python-env-setup.md](./python-env-setup.md)
-- RealSense runtime setup
+- [Workspace Setup](./workspace-setup.md) if the workspace does not exist yet
+- [Python Environment Setup](./python-env-setup.md)
+- [Viewer Setup](./viewer-setup.md) if local dataset viewing is part of the shared-account workflow
+- [Lab Machine Quick Start](./lab-machine-quick-start.md) once the shared account is provisioned

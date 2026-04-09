@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+resolve_path() {
+  local source_path="$1"
+  while [ -L "$source_path" ]; do
+    local source_dir
+    source_dir="$(cd -P -- "$(dirname -- "$source_path")" && pwd)"
+    source_path="$(readlink -- "$source_path")"
+    [[ "$source_path" != /* ]] && source_path="$source_dir/$source_path"
+  done
+  cd -P -- "$(dirname -- "$source_path")" && pwd
+}
+
+repo_root="$(resolve_path "${BASH_SOURCE[0]}")"
+ros_setup="/opt/ros/jazzy/setup.bash"
+venv_python="$repo_root/.venv/bin/python"
+console_entry="$repo_root/data_pipeline/operator_console_qt.py"
+
+if [ "${1-}" = "--help" ] || [ "${1-}" = "-h" ]; then
+  cat <<EOF
+Usage: collect [operator-console-args...]
+
+Launch the Spark operator console from this repository checkout.
+
+This script:
+  - resolves the repo root even if invoked through a symlink
+  - sources /opt/ros/jazzy/setup.bash
+  - runs data_pipeline/operator_console_qt.py with the repo-local .venv
+
+Optional PATH setup for any account:
+  mkdir -p ~/bin
+  ln -sfn $repo_root/collect ~/bin/collect
+
+EOF
+  exit 0
+fi
+
+if [ "${1-}" = "--check" ]; then
+  echo "repo_root=$repo_root"
+  echo "ros_setup=$ros_setup"
+  echo "venv_python=$venv_python"
+  echo "console_entry=$console_entry"
+  exit 0
+fi
+
+if [ ! -f "$ros_setup" ]; then
+  echo "Missing ROS setup: $ros_setup" >&2
+  exit 1
+fi
+
+if [ ! -x "$venv_python" ]; then
+  echo "Missing repo-local Python: $venv_python" >&2
+  echo "Create it first with ./data_pipeline/setup_shared_venv.sh" >&2
+  exit 1
+fi
+
+if [ ! -f "$console_entry" ]; then
+  echo "Missing operator console entrypoint: $console_entry" >&2
+  exit 1
+fi
+
+cd "$repo_root"
+source "$ros_setup"
+exec "$venv_python" "$console_entry" "$@"

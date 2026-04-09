@@ -2,25 +2,81 @@
 
 This directory contains the raw-capture and LeRobot conversion stack.
 
-The raw bag storage decision lives in [docs/raw-storage.md](./docs/raw-storage.md).
+For the curated docs entrypoint, start with [docs/setup.md](./docs/setup.md).
 
-The offline archive-bag design lives in [docs/archive-bag.md](./docs/archive-bag.md).
+For the design section, start with [docs/design-choices.md](./docs/design-choices.md).
 
-For the expected multi-repo workspace layout on a fresh machine, use [docs/workspace-setup.md](./docs/workspace-setup.md).
+For the operations section, start with [docs/operations-and-debugging.md](./docs/operations-and-debugging.md).
 
-For the required Ubuntu and ROS Jazzy packages on a fresh machine, use [docs/system-setup.md](./docs/system-setup.md).
+To preview the MkDocs site locally:
 
-For the local dataset viewer toolchain and build step, use [docs/viewer-setup.md](./docs/viewer-setup.md).
+```bash
+pip install -r requirements-docs.txt
+mkdocs serve
+```
 
-For the shared local `.venv` and interpreter split, use [docs/python-env-setup.md](./docs/python-env-setup.md).
+The default setup path for a collection-only user on the existing collection machine is:
 
-For a generic bring-up sequence, use [docs/hardware-bringup.md](./docs/hardware-bringup.md).
+1. [lab-machine-quick-start.md](./docs/lab-machine-quick-start.md)
+2. [hardware-bringup.md](./docs/hardware-bringup.md)
+3. [first-raw-demo.md](./docs/first-raw-demo.md)
+4. [first-published-conversion.md](./docs/first-published-conversion.md)
+5. [first-viewer-review.md](./docs/first-viewer-review.md)
 
-For the first smoke-test raw recording flow after bring-up, use [docs/first-raw-demo.md](./docs/first-raw-demo.md).
+The shared-account launcher shipped in this repo is:
 
-For the first published conversion flow after raw capture, use [docs/first-published-conversion.md](./docs/first-published-conversion.md).
+- [`../collect`](../collect)
 
-For the first local viewer inspection flow after conversion, use [docs/first-viewer-review.md](./docs/first-viewer-review.md).
+Any account can run it directly from the repo root, and accounts that want the
+short command name can add it to `PATH`.
+
+If you are using your own Linux account on the same machine, start with:
+
+- [personal-account-setup.md](./docs/personal-account-setup.md)
+
+Supporting setup pages are:
+
+- [personal-account-setup.md](./docs/personal-account-setup.md)
+- [workspace-setup.md](./docs/workspace-setup.md)
+- [python-env-setup.md](./docs/python-env-setup.md)
+- [viewer-setup.md](./docs/viewer-setup.md)
+- [system-setup.md](./docs/system-setup.md)
+
+Curated design pages are:
+
+- [design-choices.md](./docs/design-choices.md)
+- [system-boundaries.md](./docs/system-boundaries.md)
+- [artifact-model.md](./docs/artifact-model.md)
+- [episode-manifest-design.md](./docs/episode-manifest-design.md)
+- [environment-and-workspace-model.md](./docs/environment-and-workspace-model.md)
+- [calibration-design.md](./docs/calibration-design.md)
+- [operator-console-design.md](./docs/operator-console-design.md)
+- [viewer-integration.md](./docs/viewer-integration.md)
+- [sensor-runtime-design.md](./docs/sensor-runtime-design.md)
+- [archive-and-compression-strategy.md](./docs/archive-and-compression-strategy.md)
+- [topic-contract.md](./docs/topic-contract.md)
+- [session-capture-plan.md](./docs/session-capture-plan.md)
+- [dataset-mapping.md](./docs/dataset-mapping.md)
+- [calibration.md](./docs/calibration.md)
+
+Curated operations and debugging pages are:
+
+- [operations-and-debugging.md](./docs/operations-and-debugging.md)
+- [usb-port-and-controller-mapping.md](./docs/usb-port-and-controller-mapping.md)
+
+Internal implementation references still live here:
+
+- [V2_SPEC.md](./V2_SPEC.md)
+- [V1_SPEC.md](./V1_SPEC.md) archived
+- [notes/running-notes.md](./notes/running-notes.md)
+- [docs/internal/raw-storage.md](./docs/internal/raw-storage.md)
+- [docs/internal/archive-bag.md](./docs/internal/archive-bag.md)
+- [docs/internal/depth-storage.md](./docs/internal/depth-storage.md)
+- [docs/internal/operator-console-spec.md](./docs/internal/operator-console-spec.md)
+- [docs/internal/raiden-reference-analysis.md](./docs/internal/raiden-reference-analysis.md)
+- [docs/internal/teleop-runtime-refactor-spec.md](./docs/internal/teleop-runtime-refactor-spec.md)
+- [docs/internal/current-lightning-gelsight-runbook.md](./docs/internal/current-lightning-gelsight-runbook.md)
+- [docs/internal/replay.md](./docs/internal/replay.md)
 
 The current reference frontend is the Qt implementation:
 
@@ -39,7 +95,7 @@ sudo apt-get install -y libxcb-cursor0
 
 ## Current Scope
 
-The current V2-direction path is in place:
+The current system provides:
 
 - stable `/spark/...` topic contract for robot, camera, tactile, and teleop-activity streams
 - raw episode recording as one rosbag per demo
@@ -81,7 +137,7 @@ The accepted direction is:
 - do not zero-fill a missing arm into a bimanual schema by default
 - do not mix different active-arm or sensor layouts into the same `dataset_id`
 
-The pipeline now uses one checked-in conversion policy:
+The pipeline uses one checked-in conversion policy:
 
 - `multisensor_20hz`
   - generic 20 Hz conversion policy
@@ -94,7 +150,7 @@ Current implementation note:
   - the enabled session sensors
 - conversion uses the same generic policy and derives the effective published schema from:
   - the manifest active-arm set
-  - the recorded sensor keys
+  - the `sensor_key` values under `sensors.devices`
 - `dataset_id` remains the place where you keep embodiment-specific or rig-specific published datasets separate
 
 
@@ -131,7 +187,8 @@ ros2 launch data_pipeline/launch/realsense_contract.launch.py \
 
 That setup script builds the local `pyrealsense2` binding for system ROS Python, not for `.venv`.
 
-This bridge stamps `Image.header.stamp` with host ROS time immediately after `wait_for_frames()` returns, which matches the V2 topic contract directly. Older bags that include official RealSense metadata topics are still supported by the converter.
+This bridge stamps `Image.header.stamp` with host ROS time immediately after
+`wait_for_frames()` returns, which matches the current topic contract directly.
 
 See [docs/hardware-bringup.md](./docs/hardware-bringup.md) for the exact bring-up sequence.
 
