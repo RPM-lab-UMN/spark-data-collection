@@ -31,6 +31,8 @@ This script:
 Optional PATH setup for any account:
   mkdir -p ~/bin
   ln -sfn $repo_root/collect ~/bin/collect
+  echo 'export PATH="\$HOME/bin:\$PATH"' >> ~/.bashrc
+  source ~/.bashrc
 
 EOF
   exit 0
@@ -61,5 +63,7 @@ if [ ! -f "$console_entry" ]; then
 fi
 
 cd "$repo_root"
+set +u
 source "$ros_setup"
+set -u
 exec "$venv_python" "$console_entry" "$@"
