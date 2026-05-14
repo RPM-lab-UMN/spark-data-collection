@@ -7,6 +7,7 @@ exclude_docs: |
   archive/
   internal/
   assets/README.md
+  assets/interactive/**/README.md
 
 theme:
   name: material
@@ -56,6 +57,9 @@ nav:
   - Operations and Debugging:
     - Overview: operations-and-debugging.md
     - USB Port and Controller Mapping: usb-port-and-controller-mapping.md
+  - Hardware Fixtures:
+    - Overview: hardware-fixtures.md
+    - D405 Wrist Camera Mount: d405-wrist-camera-mount.md
 
 markdown_extensions:
   - attr_list

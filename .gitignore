@@ -24,6 +24,7 @@ site/
 
 # Project artifacts
 *.stl
+!Hardware/CAD/camera_mounts/d405_wrist_mount/printable/d405_wrist_mount_30deg_37mm.stl
 raw_episodes/
 published/
 .operator_console/

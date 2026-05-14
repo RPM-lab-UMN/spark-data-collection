@@ -4,6 +4,10 @@ BOM
 ## CAD
 The [CAD](./CAD/) folder contains the [FreeCAD](https://snapcraft.io/freecad-realthunder) sorce files, along with *.3mf* files for 3D printing. 
 
+- [D405 wrist camera mount STL](./CAD/camera_mounts/d405_wrist_mount/printable/d405_wrist_mount_30deg_37mm.stl)
+- [D405 wrist camera mount editable CAD](./CAD/camera_mounts/d405_wrist_mount/source/)
+- [D405 wrist camera mount docs](../data_pipeline/docs/d405-wrist-camera-mount.md)
+
 ## PCB
 To assemble the electronics, fabricate the PCBs found in the [PCB](./PCB/) folder. The components can be found in the BOM. 
 

@@ -15,7 +15,7 @@ This short walkthrough shows the normal operator flow:
   Your browser does not support the video tag.
 </video>
 
-It is organized into three sections:
+It is organized into four sections:
 
 - [Setup](./setup.md)
   - how to get a user from a real starting point to a working end-to-end data
@@ -24,6 +24,8 @@ It is organized into three sections:
   - the decisions that explain why the system looks the way it does today
 - [Operations and Debugging](./operations-and-debugging.md)
   - practical lab knowledge, machine-specific guidance, and debugging paths
+- [Hardware Fixtures](./hardware-fixtures.md)
+  - printable mounts, fixture geometry, and mechanical installation notes
 
 ## Start Here
 
@@ -38,3 +40,7 @@ If you are trying to understand or extend the system, start with:
 If you are trying to run the rig reliably or debug a failure, start with:
 
 - [Operations and Debugging](./operations-and-debugging.md)
+
+If you are looking for printable mounts or fixture geometry, start with:
+
+- [Hardware Fixtures](./hardware-fixtures.md)

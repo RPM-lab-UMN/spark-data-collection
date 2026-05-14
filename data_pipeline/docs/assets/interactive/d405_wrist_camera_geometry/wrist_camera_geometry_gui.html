@@ -1,0 +1,1605 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="data:,">
+  <title>D405 Wrist Camera Analysis Viewer</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f3f6f2;
+      --panel: #ffffff;
+      --ink: #172018;
+      --muted: #5c6d5f;
+      --line: #d8dfd4;
+      --green: #287a44;
+      --green-soft: #e1f1e5;
+      --blue: #286b9f;
+      --blue-soft: #e2eff8;
+      --amber: #a86615;
+      --amber-soft: #fff0d6;
+      --red: #a1362b;
+      --red-soft: #f7dfdc;
+      --gray: #6f7068;
+      --shadow: 0 18px 42px rgba(22, 34, 24, 0.11);
+      --radius: 8px;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      overflow: hidden;
+      color: var(--ink);
+      background: var(--bg);
+    }
+
+    .app {
+      height: 100vh;
+      display: grid;
+      grid-template-columns: 320px minmax(860px, 1fr) 380px;
+      gap: 10px;
+      padding: 10px;
+    }
+
+    .panel {
+      min-width: 0;
+      min-height: 0;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .left, .right {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+    }
+
+    .scroll {
+      min-height: 0;
+      overflow: auto;
+      padding: 12px;
+      display: grid;
+      gap: 10px;
+      align-content: start;
+    }
+
+    .header {
+      padding: 12px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    h1, h2, h3, p { margin: 0; }
+
+    h1 {
+      font-size: 18px;
+      line-height: 1.15;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      font-size: 14px;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      font-size: 13px;
+      letter-spacing: 0;
+    }
+
+    .subtle {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.38;
+    }
+
+    .recommendation {
+      background: var(--green-soft);
+      border: 1px solid #bddfc6;
+      border-radius: var(--radius);
+      padding: 12px;
+      display: grid;
+      gap: 9px;
+    }
+
+    .big {
+      font-size: 22px;
+      font-weight: 850;
+      color: var(--green);
+      line-height: 1;
+      letter-spacing: 0;
+    }
+
+    .setting-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .mini {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 8px;
+      background: #fbfcfa;
+      min-width: 0;
+    }
+
+    .mini span {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      margin-bottom: 3px;
+    }
+
+    .mini strong {
+      display: block;
+      color: var(--ink);
+      font-size: 13px;
+      line-height: 1.2;
+      word-break: break-word;
+    }
+
+    .control {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 10px;
+      background: #fbfcfa;
+    }
+
+    .control-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 7px;
+    }
+
+    label {
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .value {
+      color: var(--green);
+      font-size: 13px;
+      font-weight: 850;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--green);
+    }
+
+    .scale {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 11px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .preset-list {
+      display: grid;
+      gap: 6px;
+    }
+
+    .preset {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fff;
+      color: var(--ink);
+      padding: 8px;
+      text-align: left;
+      cursor: pointer;
+      display: grid;
+      gap: 2px;
+    }
+
+    .preset strong {
+      font-size: 13px;
+    }
+
+    .preset span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .preset.active {
+      background: var(--green-soft);
+      border-color: var(--green);
+    }
+
+    .layers {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 7px;
+    }
+
+    .toggle {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fff;
+      padding: 8px;
+      color: var(--ink);
+      font-size: 12px;
+      font-weight: 750;
+      cursor: pointer;
+    }
+
+    .toggle input {
+      accent-color: var(--green);
+    }
+
+    .viewer {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr) auto;
+    }
+
+    .viewer-head {
+      min-width: 0;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      align-items: center;
+    }
+
+    .scene-title {
+      display: grid;
+      gap: 2px;
+    }
+
+    .status-strip {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .pill {
+      border-radius: 999px;
+      padding: 5px 8px;
+      font-size: 12px;
+      font-weight: 850;
+      background: var(--green-soft);
+      color: var(--green);
+      border: 1px solid #bddfc6;
+      white-space: nowrap;
+    }
+
+    .pill.blue {
+      color: var(--blue);
+      background: var(--blue-soft);
+      border-color: #bad4e8;
+    }
+
+    .pill.amber {
+      color: var(--amber);
+      background: var(--amber-soft);
+      border-color: #ebd09c;
+    }
+
+    .scene-wrap {
+      min-height: 0;
+      position: relative;
+      background: #fcfdfb;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    #scene {
+      position: absolute;
+      inset: 0;
+    }
+
+    .scene-card {
+      position: absolute;
+      left: 14px;
+      bottom: 14px;
+      max-width: 560px;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      pointer-events: none;
+    }
+
+    .scene-card .mini {
+      background: rgba(255, 255, 255, 0.9);
+      backdrop-filter: blur(4px);
+    }
+
+    .legend {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 7px 14px;
+      padding: 8px 12px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .swatch {
+      display: inline-block;
+      width: 11px;
+      height: 11px;
+      border-radius: 2px;
+      margin-right: 5px;
+      vertical-align: -1px;
+    }
+
+    .metric {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fbfcfa;
+      padding: 10px;
+      display: grid;
+      gap: 6px;
+    }
+
+    .metric-top {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: start;
+    }
+
+    .metric-name {
+      font-size: 13px;
+      font-weight: 850;
+      line-height: 1.2;
+    }
+
+    .metric-value {
+      font-size: 16px;
+      font-weight: 900;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    .metric.good .metric-value { color: var(--green); }
+    .metric.warn .metric-value { color: var(--amber); }
+    .metric.bad .metric-value { color: var(--red); }
+
+    .badge {
+      justify-self: start;
+      border-radius: 999px;
+      padding: 4px 7px;
+      font-size: 11px;
+      font-weight: 850;
+      background: var(--green-soft);
+      color: var(--green);
+    }
+
+    .metric.warn .badge {
+      background: var(--amber-soft);
+      color: var(--amber);
+    }
+
+    .metric.bad .badge {
+      background: var(--red-soft);
+      color: var(--red);
+    }
+
+    .side-panel {
+      min-height: 230px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      overflow: hidden;
+      background: #fcfdfb;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+    }
+
+    .side-panel h3 {
+      padding: 9px 10px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    #slice {
+      min-height: 190px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fff;
+    }
+
+    th, td {
+      padding: 7px 8px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 850;
+      background: #f7f9f5;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    tr.current td {
+      background: var(--green-soft);
+    }
+
+    .num {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <aside class="panel left">
+      <div class="header">
+        <h1>D405 Wrist Camera Analysis</h1>
+        <p class="subtle">Robotiq 2F-85 mount geometry and first-print camera placement.</p>
+      </div>
+      <div class="scroll">
+        <section class="recommendation">
+          <div>
+            <h2>First Print Recommendation</h2>
+            <div class="big">30 deg / 37 mm / 0 mm</div>
+          </div>
+          <p class="subtle">Landscape D405, centered on the gripper. This keeps the fingertips and object approach region inside the D405 vertical FOV with practical margin.</p>
+          <div class="setting-grid">
+            <div class="mini"><span>Orientation</span><strong>Landscape only</strong></div>
+            <div class="mini"><span>Yaw / roll</span><strong>0 deg / 0 deg</strong></div>
+            <div class="mini"><span>Hole centers</span><strong>X = +/-10 mm</strong></div>
+            <div class="mini"><span>Station range</span><strong>36-38 mm</strong></div>
+          </div>
+        </section>
+
+        <section class="control">
+          <div class="control-head">
+            <label for="pitch">Plate pitch</label>
+            <span class="value" id="pitchValue">30 deg</span>
+          </div>
+          <input id="pitch" type="range" min="24" max="46" value="30" step="0.5">
+          <div class="scale"><span>24</span><span>30 recommended</span><span>46</span></div>
+        </section>
+
+        <section class="control">
+          <div class="control-head">
+            <label for="station">D405 hole station</label>
+            <span class="value" id="stationValue">37 mm</span>
+          </div>
+          <input id="station" type="range" min="28" max="44" value="37" step="0.5">
+          <div class="scale"><span>28</span><span>36-38 sweet spot</span><span>44</span></div>
+        </section>
+
+        <section class="control">
+          <div class="control-head">
+            <label for="offset">Flat offset before tilt</label>
+            <span class="value" id="offsetValue">0 mm</span>
+          </div>
+          <input id="offset" type="range" min="0" max="20" value="0" step="0.5">
+          <div class="scale"><span>0</span><span>only if clearance needs it</span><span>20</span></div>
+          <p class="subtle" style="margin-top: 7px;">A real flat ledge from the saddle before the tilted plate starts. It is not a hidden camera translation.</p>
+        </section>
+
+        <section class="control">
+          <div class="control-head">
+            <label for="grip">Robotiq opening pose</label>
+            <span class="value" id="gripValue">0.40 rad</span>
+          </div>
+          <input id="grip" type="range" min="0" max="0.8" value="0.4" step="0.02">
+          <div class="scale"><span>open</span><span>mid</span><span>closed</span></div>
+        </section>
+
+        <section class="control">
+          <h3 style="margin-bottom: 8px;">Compare Candidates</h3>
+          <div class="preset-list" id="presetList"></div>
+        </section>
+
+        <section class="control">
+          <h3 style="margin-bottom: 8px;">Scene Layers</h3>
+          <div class="layers">
+            <label class="toggle"><input id="showFov" type="checkbox" checked> FOV</label>
+            <label class="toggle"><input id="showTargets" type="checkbox" checked> targets</label>
+            <label class="toggle"><input id="showLabels" type="checkbox" checked> labels</label>
+            <label class="toggle"><input id="showAllPoses" type="checkbox"> all poses</label>
+          </div>
+        </section>
+      </div>
+    </aside>
+
+    <section class="panel viewer">
+      <div class="viewer-head">
+        <div class="scene-title">
+          <h2>3D View: Why 30 deg Wins</h2>
+          <p class="subtle">Fixed side view: the D405 lens points left and down into the Robotiq fingers and object region.</p>
+        </div>
+        <div class="status-strip">
+          <span class="pill" id="visibilityPill">100% visible</span>
+          <span class="pill blue" id="marginPill">5.5 deg FOV margin</span>
+          <span class="pill amber" id="depthPill">24 mm depth margin</span>
+        </div>
+      </div>
+      <div class="scene-wrap">
+        <canvas id="scene" aria-label="D405 wrist camera 3D geometry scene"></canvas>
+        <div class="scene-card">
+          <div class="mini"><span>Analysis target</span><strong>pads + pinch + object ahead</strong></div>
+          <div class="mini"><span>D405 depth FOV</span><strong>87 x 58 deg</strong></div>
+          <div class="mini"><span>Working range</span><strong>70-500 mm</strong></div>
+        </div>
+      </div>
+      <div class="legend">
+        <span><i class="swatch" style="background:#77776d"></i>Robotiq mount</span>
+        <span><i class="swatch" style="background:#b68a3a"></i>flat offset</span>
+        <span><i class="swatch" style="background:#6f6b5f"></i>tilted plate</span>
+        <span><i class="swatch" style="background:#202529"></i>D405 landscape body</span>
+        <span><i class="swatch" style="background:#8fc0e6"></i>depth FOV</span>
+        <span><i class="swatch" style="background:#1d1d1d"></i>targets</span>
+      </div>
+    </section>
+
+    <aside class="panel right">
+      <div class="header">
+        <h2>Decision Readout</h2>
+        <p class="subtle">The important margins for the current slider settings.</p>
+      </div>
+      <div class="scroll">
+        <section id="metrics" style="display:grid; gap:8px;"></section>
+
+        <section class="side-panel">
+          <h3>Side FOV Slice</h3>
+          <canvas id="slice" aria-label="Side-view FOV slice"></canvas>
+        </section>
+
+        <section>
+          <h3 style="margin-bottom: 8px;">Sweep Summary</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>Candidate</th>
+                <th class="num">Score</th>
+                <th class="num">Max angle</th>
+              </tr>
+            </thead>
+            <tbody id="candidateRows"></tbody>
+          </table>
+        </section>
+
+        <section class="metric good">
+          <div class="metric-top">
+            <div class="metric-name">Landscape orientation</div>
+            <div class="metric-value">fixed</div>
+          </div>
+          <div class="badge">use it</div>
+          <p class="subtle">The horizontal 87 deg FOV spans the 2F-85 opening with lateral margin. Portrait would put the 58 deg axis across the gripper opening and leave little room.</p>
+        </section>
+      </div>
+    </aside>
+  </main>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "./vendor/three.module.min.js"
+      }
+    }
+  </script>
+
+  <script type="module">
+    import * as THREE from "three";
+
+    const constants = {
+      d405HFov: 87,
+      d405VFov: 58,
+      d405MinDepth: 70,
+      d405MaxDepth: 500,
+      d405BodyDepth: 23,
+      d405BodySize: 42,
+      lowerWidth: 48,
+      lowerLength: 52,
+      lowerThick: 5.956,
+      holeX: 10,
+      lowerS0: 45.9405,
+      lowerUInner: 25.9418,
+      referencePitch: 35.058317744437524
+    };
+
+    const presets = [
+      { id: "recommended", name: "Recommended first print", pitch: 30, station: 37, offset: 0, caption: "30 deg / station 37 / offset 0" },
+      { id: "context", name: "More approach context", pitch: 28, station: 36, offset: 0, caption: "28 deg / station 36 / offset 0" },
+      { id: "current", name: "Current-like baseline", pitch: 35, station: 36, offset: 0, caption: "35 deg / station 36 / offset 0" },
+      { id: "steep", name: "Too contact-heavy", pitch: 38, station: 40, offset: 0, caption: "38 deg / station 40 / offset 0" }
+    ];
+
+    const sweepRows = [
+      { label: "30 / 37 / 0", pitch: 30, station: 37, offset: 0, score: 100.0, maxAngle: 23.5 },
+      { label: "29.5 / 36 / 0", pitch: 29.5, station: 36, offset: 0, score: 100.0, maxAngle: 23.5 },
+      { label: "28 / 36 / 0", pitch: 28, station: 36, offset: 0, score: 99.5, maxAngle: 24.7 },
+      { label: "32 / 38 / 0", pitch: 32, station: 38, offset: 0, score: 99.2, maxAngle: 23.8 },
+      { label: "35 / 36 / 0", pitch: 35, station: 36, offset: 0, score: 85.4, maxAngle: 28.8 },
+      { label: "38 / 40 / 0", pitch: 38, station: 40, offset: 0, score: 60.0, maxAngle: 30.7 }
+    ];
+
+    const state = {
+      pitch: 30,
+      station: 37,
+      offset: 0,
+      grip: 0.4,
+      showFov: true,
+      showTargets: true,
+      showLabels: true,
+      showAllPoses: false
+    };
+
+    const elements = {
+      pitch: document.getElementById("pitch"),
+      station: document.getElementById("station"),
+      offset: document.getElementById("offset"),
+      grip: document.getElementById("grip"),
+      pitchValue: document.getElementById("pitchValue"),
+      stationValue: document.getElementById("stationValue"),
+      offsetValue: document.getElementById("offsetValue"),
+      gripValue: document.getElementById("gripValue"),
+      showFov: document.getElementById("showFov"),
+      showTargets: document.getElementById("showTargets"),
+      showLabels: document.getElementById("showLabels"),
+      showAllPoses: document.getElementById("showAllPoses"),
+      presetList: document.getElementById("presetList"),
+      scene: document.getElementById("scene"),
+      slice: document.getElementById("slice"),
+      metrics: document.getElementById("metrics"),
+      candidateRows: document.getElementById("candidateRows"),
+      visibilityPill: document.getElementById("visibilityPill"),
+      marginPill: document.getElementById("marginPill"),
+      depthPill: document.getElementById("depthPill")
+    };
+
+    function degToRad(deg) {
+      return deg * Math.PI / 180;
+    }
+
+    function radToDeg(rad) {
+      return rad * 180 / Math.PI;
+    }
+
+    function fmt(value, digits = 1) {
+      if (Math.abs(value - Math.round(value)) < 0.05) return String(Math.round(value));
+      return value.toFixed(digits);
+    }
+
+    function clamp(value, min, max) {
+      return Math.max(min, Math.min(max, value));
+    }
+
+    function add(a, b) {
+      return [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+    }
+
+    function sub(a, b) {
+      return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+    }
+
+    function mul(a, s) {
+      return [a[0] * s, a[1] * s, a[2] * s];
+    }
+
+    function dot(a, b) {
+      return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    }
+
+    function matMul(a, b) {
+      const out = [];
+      for (let i = 0; i < 3; i += 1) {
+        out[i] = [];
+        for (let j = 0; j < 3; j += 1) {
+          out[i][j] = a[i][0] * b[0][j] + a[i][1] * b[1][j] + a[i][2] * b[2][j];
+        }
+      }
+      return out;
+    }
+
+    function matVec(m, v) {
+      return [
+        m[0][0] * v[0] + m[0][1] * v[1] + m[0][2] * v[2],
+        m[1][0] * v[0] + m[1][1] * v[1] + m[1][2] * v[2],
+        m[2][0] * v[0] + m[2][1] * v[1] + m[2][2] * v[2]
+      ];
+    }
+
+    function rx(a) {
+      const c = Math.cos(a);
+      const s = Math.sin(a);
+      return [[1, 0, 0], [0, c, -s], [0, s, c]];
+    }
+
+    function rz(a) {
+      const c = Math.cos(a);
+      const s = Math.sin(a);
+      return [[c, -s, 0], [s, c, 0], [0, 0, 1]];
+    }
+
+    function compose(pos, rot, childPos, childRot) {
+      return {
+        pos: add(pos, matVec(rot, childPos)),
+        rot: matMul(rot, childRot)
+      };
+    }
+
+    function rosToMountMm(p) {
+      return [p[0] * 1000, -p[2] * 1000, p[1] * 1000];
+    }
+
+    function padCenter(side, q) {
+      let pos;
+      let rot;
+      if (side === "left") {
+        pos = [0, -0.0306011, 0.054904];
+        rot = matMul(rz(Math.PI), rx(q));
+      } else {
+        pos = [0, 0.0306011, 0.054904];
+        rot = rx(q);
+      }
+      let next = compose(pos, rot, [0, 0.0315, -0.0041], [[1, 0, 0], [0, 1, 0], [0, 0, 1]]);
+      next = compose(next.pos, next.rot, [0, 0.0061, 0.0471], rx(-q));
+      next = compose(next.pos, next.rot, [0, -0.0220203446692936, 0.03242], [[1, 0, 0], [0, 1, 0], [0, 0, 1]]);
+      return rosToMountMm(next.pos);
+    }
+
+    function gripperOpening(q) {
+      return clamp(85 * (1 - q / 0.8), 0, 85);
+    }
+
+    function targetPoints(q) {
+      const left = padCenter("left", q);
+      const right = padCenter("right", q);
+      const pinch = [(left[0] + right[0]) / 2, (left[1] + right[1]) / 2, (left[2] + right[2]) / 2];
+      return {
+        leftPad: left,
+        rightPad: right,
+        pinch,
+        object50: [pinch[0], pinch[1] - 50, pinch[2]],
+        object100: [pinch[0], pinch[1] - 100, pinch[2]],
+        object150: [pinch[0], pinch[1] - 150, pinch[2]]
+      };
+    }
+
+    function plateVectors(pitch) {
+      const theta = degToRad(pitch);
+      return {
+        t: [0, -Math.sin(theta), -Math.cos(theta)],
+        n: [0, Math.cos(theta), -Math.sin(theta)]
+      };
+    }
+
+    function fixedSaddleAnchor() {
+      const ref = plateVectors(constants.referencePitch);
+      return add(mul(ref.t, constants.lowerS0), mul(ref.n, constants.lowerUInner));
+    }
+
+    function cameraModelWithOpticalSign(opticalSign) {
+      const vectors = plateVectors(state.pitch);
+      const anchor = fixedSaddleAnchor();
+      const p0 = add(anchor, [0, -state.offset, 0]);
+      const platePoint = add(p0, mul(vectors.t, state.station));
+      const rearCenter = add(platePoint, mul(vectors.n, constants.lowerThick));
+      const optical = mul(vectors.n, opticalSign);
+      const up = mul(vectors.t, -1);
+      const origin = add(rearCenter, mul(optical, constants.d405BodyDepth));
+      return {
+        anchor,
+        p0,
+        t: vectors.t,
+        n: vectors.n,
+        platePoint,
+        holeMid: add(platePoint, mul(vectors.n, constants.lowerThick / 2)),
+        rearCenter,
+        optical,
+        up,
+        origin
+      };
+    }
+
+    function cameraModel() {
+      return cameraModelWithOpticalSign(1);
+    }
+
+    function analysisCameraModel() {
+      return cameraModelWithOpticalSign(-1);
+    }
+
+    function mirrorAnalysisPointIntoPhysicalView(point) {
+      const analysis = analysisCameraModel();
+      const physical = cameraModel();
+      const rel = sub(point, analysis.origin);
+      return add(physical.origin, [rel[0], -rel[1], -rel[2]]);
+    }
+
+    function targetPoints3d(q) {
+      const base = targetPoints(q);
+      const opening = gripperOpening(q);
+      return {
+        leftPad: mirrorAnalysisPointIntoPhysicalView([-opening / 2, base.leftPad[1], base.leftPad[2]]),
+        rightPad: mirrorAnalysisPointIntoPhysicalView([opening / 2, base.rightPad[1], base.rightPad[2]]),
+        pinch: mirrorAnalysisPointIntoPhysicalView(base.pinch),
+        object50: mirrorAnalysisPointIntoPhysicalView(base.object50),
+        object100: mirrorAnalysisPointIntoPhysicalView(base.object100),
+        object150: mirrorAnalysisPointIntoPhysicalView(base.object150)
+      };
+    }
+
+    function rotateYZ(vec, angleDeg) {
+      const a = degToRad(angleDeg);
+      const y = vec[1] * Math.cos(a) - vec[2] * Math.sin(a);
+      const z = vec[1] * Math.sin(a) + vec[2] * Math.cos(a);
+      return [0, y, z];
+    }
+
+    function visibility(point, model) {
+      const v = sub(point, model.origin);
+      const forward = dot(v, model.optical);
+      const vertical = radToDeg(Math.atan2(dot(v, model.up), forward));
+      const horizontal = radToDeg(Math.atan2(v[0], forward));
+      const inDepth = forward >= constants.d405MinDepth && forward <= constants.d405MaxDepth;
+      const inFov = Math.abs(vertical) <= constants.d405VFov / 2 && Math.abs(horizontal) <= constants.d405HFov / 2;
+      return { forward, vertical, horizontal, inDepth, inFov, visible: inDepth && inFov };
+    }
+
+    function allTargetEntries(q) {
+      const points = targetPoints3d(q);
+      return [
+        ["lower pad", points.leftPad, "pad"],
+        ["upper pad", points.rightPad, "pad"],
+        ["pinch", points.pinch, "pinch"],
+        ["object +50", points.object50, "object"],
+        ["object +100", points.object100, "object"],
+        ["object +150", points.object150, "object"]
+      ];
+    }
+
+    function evaluateAll() {
+      const model = cameraModel();
+      const qs = [0, 0.2, 0.4, 0.6, 0.8];
+      let visible = 0;
+      let total = 0;
+      let maxAbsVertical = 0;
+      let minForward = Infinity;
+      let worstDepthMargin = Infinity;
+      let worstPoint = null;
+      for (const q of qs) {
+        for (const [name, point] of allTargetEntries(q)) {
+          const v = visibility(point, model);
+          total += 1;
+          if (v.visible) visible += 1;
+          const absVertical = Math.abs(v.vertical);
+          if (absVertical > maxAbsVertical) {
+            maxAbsVertical = absVertical;
+            worstPoint = name;
+          }
+          minForward = Math.min(minForward, v.forward);
+          worstDepthMargin = Math.min(worstDepthMargin, v.forward - constants.d405MinDepth);
+        }
+      }
+      const pinch = visibility(targetPoints3d(state.grip).pinch, model);
+      const wideSpan = 2 * pinch.forward * Math.tan(degToRad(constants.d405HFov / 2));
+      return {
+        model,
+        visiblePct: visible / total * 100,
+        verticalMargin: constants.d405VFov / 2 - maxAbsVertical,
+        maxAbsVertical,
+        minForward,
+        worstDepthMargin,
+        worstPoint,
+        pinchDepth: pinch.forward,
+        pinchVertical: pinch.vertical,
+        wideSpan
+      };
+    }
+
+    function toThree(p) {
+      return new THREE.Vector3(p[0], p[2], -p[1]);
+    }
+
+    function dirToThree(v) {
+      return new THREE.Vector3(v[0], v[2], -v[1]).normalize();
+    }
+
+    function setFrame(object, centerMount, xAxisMount, yAxisMount, zAxisMount) {
+      const basis = new THREE.Matrix4().makeBasis(
+        dirToThree(xAxisMount),
+        dirToThree(yAxisMount),
+        dirToThree(zAxisMount)
+      );
+      object.position.copy(toThree(centerMount));
+      object.setRotationFromMatrix(basis);
+    }
+
+    const threeState = {
+      renderer: null,
+      scene: null,
+      camera: null,
+      root: null,
+      dragging: false,
+      lastX: 0,
+      lastY: 0,
+      orbit: {
+        yaw: -1.57,
+        pitch: 0,
+        distance: 430,
+        target: new THREE.Vector3(0, -115, -45)
+      }
+    };
+
+    function initThree() {
+      if (threeState.renderer) return;
+      const renderer = new THREE.WebGLRenderer({ canvas: elements.scene, antialias: true });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      renderer.setClearColor(0xfcfdfb, 1);
+      threeState.renderer = renderer;
+      threeState.scene = new THREE.Scene();
+      threeState.camera = new THREE.PerspectiveCamera(42, 1, 1, 1400);
+
+      const ambient = new THREE.HemisphereLight(0xffffff, 0xcfd8cb, 1.45);
+      threeState.scene.add(ambient);
+      const key = new THREE.DirectionalLight(0xffffff, 2.2);
+      key.position.set(-150, 170, 180);
+      threeState.scene.add(key);
+      const fill = new THREE.DirectionalLight(0xc9ddff, 0.8);
+      fill.position.set(160, 70, -180);
+      threeState.scene.add(fill);
+
+      elements.scene.addEventListener("pointerdown", event => {
+        threeState.dragging = true;
+        threeState.lastX = event.clientX;
+        threeState.lastY = event.clientY;
+        elements.scene.setPointerCapture(event.pointerId);
+      });
+      elements.scene.addEventListener("pointermove", event => {
+        if (!threeState.dragging) return;
+        const dx = event.clientX - threeState.lastX;
+        const dy = event.clientY - threeState.lastY;
+        threeState.lastX = event.clientX;
+        threeState.lastY = event.clientY;
+        threeState.orbit.yaw -= dx * 0.006;
+        threeState.orbit.pitch = clamp(threeState.orbit.pitch - dy * 0.005, -1.15, 1.15);
+        renderThreeFrame();
+      });
+      elements.scene.addEventListener("pointerup", event => {
+        threeState.dragging = false;
+        elements.scene.releasePointerCapture(event.pointerId);
+      });
+      elements.scene.addEventListener("wheel", event => {
+        event.preventDefault();
+        threeState.orbit.distance = clamp(threeState.orbit.distance + event.deltaY * 0.18, 120, 560);
+        renderThreeFrame();
+      }, { passive: false });
+    }
+
+    function addBox(root, centerMount, size, axes, material) {
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(size[0], size[1], size[2]), material);
+      setFrame(mesh, centerMount, axes[0], axes[1], axes[2]);
+      root.add(mesh);
+      return mesh;
+    }
+
+    function addCylinder(root, centerMount, radius, length, axisMount, material, segments = 32) {
+      const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, length, segments), material);
+      mesh.position.copy(toThree(centerMount));
+      mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dirToThree(axisMount));
+      root.add(mesh);
+      return mesh;
+    }
+
+    function addSphere(root, centerMount, radius, material, opacity = 1) {
+      const mat = opacity < 1 ? material.clone() : material;
+      if (opacity < 1) {
+        mat.transparent = true;
+        mat.opacity = opacity;
+      }
+      const mesh = new THREE.Mesh(new THREE.SphereGeometry(radius, 24, 16), mat);
+      mesh.position.copy(toThree(centerMount));
+      root.add(mesh);
+      return mesh;
+    }
+
+    function addLine(root, pointsMount, color, opacity = 1) {
+      const geometry = new THREE.BufferGeometry().setFromPoints(pointsMount.map(toThree));
+      const material = new THREE.LineBasicMaterial({ color, transparent: opacity < 1, opacity });
+      const line = new THREE.Line(geometry, material);
+      root.add(line);
+      return line;
+    }
+
+    function addText(root, text, posMount, color = "#172018", size = 12) {
+      if (!state.showLabels) return;
+      const scale = Math.min(window.devicePixelRatio || 1, 2);
+      const canvas = document.createElement("canvas");
+      canvas.width = 480 * scale;
+      canvas.height = 112 * scale;
+      const ctx = canvas.getContext("2d");
+      ctx.scale(scale, scale);
+      ctx.font = "800 24px Inter, Segoe UI, sans-serif";
+      const w = Math.min(440, ctx.measureText(text).width + 26);
+      ctx.fillStyle = "rgba(255, 255, 255, 0.88)";
+      ctx.strokeStyle = "rgba(23, 32, 24, 0.16)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(8, 28, w, 48, 8);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = color;
+      ctx.fillText(text, 21, 60);
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false }));
+      sprite.position.copy(toThree(posMount));
+      sprite.scale.set(size * 4.2, size, 1);
+      root.add(sprite);
+    }
+
+    function frustumCorner(model, distance, sx, sy) {
+      const halfW = distance * Math.tan(degToRad(constants.d405HFov / 2));
+      const halfH = distance * Math.tan(degToRad(constants.d405VFov / 2));
+      return add(add(add(model.origin, mul(model.optical, distance)), [sx * halfW, 0, 0]), mul(model.up, sy * halfH));
+    }
+
+    function addFrustum(root, model, materials) {
+      const near = constants.d405MinDepth;
+      const far = 270;
+      const points = [
+        frustumCorner(model, near, -1, -1),
+        frustumCorner(model, near, 1, -1),
+        frustumCorner(model, near, 1, 1),
+        frustumCorner(model, near, -1, 1),
+        frustumCorner(model, far, -1, -1),
+        frustumCorner(model, far, 1, -1),
+        frustumCorner(model, far, 1, 1),
+        frustumCorner(model, far, -1, 1)
+      ];
+      const geometry = new THREE.BufferGeometry().setFromPoints(points.map(toThree));
+      geometry.setIndex([
+        0, 1, 2, 0, 2, 3,
+        4, 6, 5, 4, 7, 6,
+        0, 4, 5, 0, 5, 1,
+        1, 5, 6, 1, 6, 2,
+        2, 6, 7, 2, 7, 3,
+        3, 7, 4, 3, 4, 0
+      ]);
+      geometry.computeVertexNormals();
+      const mesh = new THREE.Mesh(geometry, materials.fov);
+      root.add(mesh);
+      const edges = [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
+      for (const [a, b] of edges) addLine(root, [points[a], points[b]], 0x5d9dcb, 0.75);
+      root.add(new THREE.ArrowHelper(dirToThree(model.optical), toThree(model.origin), 150, 0x287a44, 11, 4.5));
+      addText(root, "D405 optical axis", add(model.origin, mul(model.optical, 132)), "#287a44", 11);
+    }
+
+    function addTarget(root, point, kind, visible, materials, opacity = 1) {
+      const mat = visible ? materials.target : materials.bad;
+      if (kind === "object") {
+        addBox(root, point, [7, 7, 7], [[1, 0, 0], [0, 0, 1], [0, -1, 0]], mat);
+      } else if (kind === "pinch") {
+        addSphere(root, point, 5.5, materials.pinch, opacity);
+      } else {
+        addSphere(root, point, 4.5, mat, opacity);
+      }
+    }
+
+    function addTargets(root, model, materials) {
+      if (!state.showTargets) return;
+      const qs = state.showAllPoses ? [0, 0.2, 0.4, 0.6, 0.8] : [state.grip];
+      for (const q of qs) {
+        const opacity = Math.abs(q - state.grip) < 0.001 ? 1 : 0.22;
+        for (const [label, point, kind] of allTargetEntries(q)) {
+          const vis = visibility(point, model);
+          addTarget(root, point, kind, vis.visible, materials, opacity);
+          if (!state.showAllPoses || Math.abs(q - state.grip) < 0.001) {
+            if (["lower pad", "upper pad", "pinch", "object +100"].includes(label)) {
+              addText(root, label, add(point, [6, -3, 9]), vis.visible ? "#172018" : "#a1362b", 10);
+            }
+          }
+        }
+      }
+    }
+
+    function addAxes(root) {
+      const origin = toThree([0, 0, 0]);
+      root.add(new THREE.ArrowHelper(dirToThree([0, 0, 1]), origin, 72, 0x286b9f, 8, 4));
+      root.add(new THREE.ArrowHelper(dirToThree([1, 0, 0]), origin, 56, 0xa1362b, 8, 4));
+      addText(root, "+Z up", [0, 0, 78], "#286b9f", 11);
+      addText(root, "X across gripper", [62, 0, 0], "#a1362b", 11);
+    }
+
+    function buildScene() {
+      initThree();
+      if (threeState.root) {
+        threeState.scene.remove(threeState.root);
+        threeState.root.traverse(child => {
+          if (child.geometry) child.geometry.dispose();
+          if (child.material) {
+            const mats = Array.isArray(child.material) ? child.material : [child.material];
+            for (const mat of mats) {
+              if (mat.map) mat.map.dispose();
+              mat.dispose();
+            }
+          }
+        });
+      }
+
+      const root = new THREE.Group();
+      threeState.root = root;
+      threeState.scene.add(root);
+
+      const materials = {
+        mount: new THREE.MeshStandardMaterial({ color: 0x77776d, roughness: 0.58, metalness: 0.04 }),
+        saddle: new THREE.MeshStandardMaterial({ color: 0x6f7068, roughness: 0.6 }),
+        face: new THREE.MeshStandardMaterial({ color: 0x172018, roughness: 0.5, transparent: true, opacity: 0.62 }),
+        shelf: new THREE.MeshStandardMaterial({ color: 0xb68a3a, roughness: 0.58 }),
+        plate: new THREE.MeshStandardMaterial({ color: 0x6f6b5f, roughness: 0.54, metalness: 0.04 }),
+        finger: new THREE.MeshStandardMaterial({ color: 0xd9d3c7, roughness: 0.7 }),
+        camera: new THREE.MeshStandardMaterial({ color: 0x202529, roughness: 0.44, metalness: 0.08 }),
+        lens: new THREE.MeshStandardMaterial({ color: 0x050607, roughness: 0.35 }),
+        hole: new THREE.MeshStandardMaterial({ color: 0x050505, roughness: 0.42 }),
+        target: new THREE.MeshStandardMaterial({ color: 0x1d1d1d, roughness: 0.4 }),
+        pinch: new THREE.MeshStandardMaterial({ color: 0x287a44, roughness: 0.35 }),
+        bad: new THREE.MeshStandardMaterial({ color: 0xa1362b, roughness: 0.42 }),
+        fov: new THREE.MeshBasicMaterial({ color: 0x8fc0e6, transparent: true, opacity: 0.22, side: THREE.DoubleSide })
+      };
+
+      const grid = new THREE.GridHelper(360, 12, 0xcbd3c6, 0xe2e7df);
+      grid.position.y = -225;
+      root.add(grid);
+
+      const model = cameraModel();
+      const opening = gripperOpening(state.grip);
+
+      addAxes(root);
+
+      addBox(root, [0, model.anchor[1] + 20, model.anchor[2] - 8], [88, 40, 58], [[1, 0, 0], [0, 1, 0], [0, 0, 1]], materials.saddle);
+      addBox(root, [0, model.anchor[1] + 0.4, model.anchor[2] - 8], [constants.lowerWidth + 12, 25, 1.2], [[1, 0, 0], [0, 0, 1], [0, 1, 0]], materials.face);
+      addText(root, "saddle / front body", [-56, model.anchor[1] + 3, model.anchor[2] + 18], "#172018", 11);
+
+      const gripTargets = targetPoints3d(state.grip);
+      for (const sx of [-1, 1]) {
+        addBox(root, [sx * (opening / 2 + 11), gripTargets.pinch[1] + 42, gripTargets.pinch[2]], [18, 142, 24], [[1, 0, 0], [0, 1, 0], [0, 0, 1]], materials.finger);
+      }
+
+      if (state.offset > 0) {
+        addBox(root, [0, model.anchor[1] - state.offset / 2, model.anchor[2] - constants.lowerThick / 2], [constants.lowerWidth, state.offset, constants.lowerThick], [[1, 0, 0], [0, 1, 0], [0, 0, 1]], materials.shelf);
+        addLine(root, [model.anchor, model.p0], 0xa86615, 1);
+        addText(root, `flat offset ${fmt(state.offset)} mm`, [0, model.anchor[1] - state.offset / 2, model.anchor[2] + 10], "#a86615", 11);
+      }
+
+      addBox(
+        root,
+        add(add(model.p0, mul(model.t, constants.lowerLength / 2)), mul(model.n, constants.lowerThick / 2)),
+        [constants.lowerWidth, constants.lowerLength, constants.lowerThick],
+        [[1, 0, 0], model.t, model.n],
+        materials.plate
+      );
+      addText(root, `plate pitch ${fmt(state.pitch)} deg`, add(model.p0, [32, -8, 8]), "#286b9f", 11);
+
+      for (const x of [-constants.holeX, constants.holeX]) {
+        const holeCenter = add(add(add(model.p0, [x, 0, 0]), mul(model.t, state.station)), mul(model.n, constants.lowerThick + 0.2));
+        addCylinder(root, holeCenter, 2.2, 3.2, model.n, materials.hole, 32);
+      }
+      addLine(root, [model.p0, add(model.p0, mul(model.t, state.station))], 0x111111, 1);
+      addText(root, `station ${fmt(state.station)} mm`, add(add(model.p0, mul(model.t, state.station / 2)), [10, 0, 5]), "#172018", 10);
+
+      addBox(
+        root,
+        add(model.rearCenter, mul(model.optical, constants.d405BodyDepth / 2)),
+        [constants.d405BodySize, constants.d405BodySize, constants.d405BodyDepth],
+        [[1, 0, 0], model.up, model.optical],
+        materials.camera
+      );
+      addCylinder(root, add(model.origin, mul(model.optical, 2.0)), 5.6, 3.4, model.optical, materials.lens, 32);
+      addText(root, "D405 landscape", add(model.origin, [22, 4, 8]), "#172018", 11);
+
+      if (state.showFov) addFrustum(root, model, materials);
+      addTargets(root, model, materials);
+
+      renderThreeFrame();
+    }
+
+    function resizeThree() {
+      const rect = elements.scene.getBoundingClientRect();
+      if (rect.width < 2 || rect.height < 2) return false;
+      const width = Math.floor(rect.width);
+      const height = Math.floor(rect.height);
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      if (elements.scene.width !== Math.floor(width * dpr) || elements.scene.height !== Math.floor(height * dpr)) {
+        threeState.renderer.setPixelRatio(dpr);
+        threeState.renderer.setSize(width, height, false);
+        threeState.camera.aspect = width / height;
+        threeState.camera.updateProjectionMatrix();
+      }
+      return true;
+    }
+
+    function updateThreeCamera() {
+      const { yaw, pitch, distance, target } = threeState.orbit;
+      const cp = Math.cos(pitch);
+      threeState.camera.position.set(
+        target.x + distance * cp * Math.sin(yaw),
+        target.y + distance * Math.sin(pitch),
+        target.z + distance * cp * Math.cos(yaw)
+      );
+      threeState.camera.lookAt(target);
+    }
+
+    function renderThreeFrame() {
+      if (!threeState.renderer) return;
+      if (!resizeThree()) return;
+      updateThreeCamera();
+      threeState.renderer.render(threeState.scene, threeState.camera);
+    }
+
+    function resizeCanvas(canvas) {
+      const rect = canvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      const width = Math.max(1, Math.floor(rect.width * dpr));
+      const height = Math.max(1, Math.floor(rect.height * dpr));
+      if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+      }
+      return { width, height, dpr };
+    }
+
+    function drawArrow(ctx, a, b, color, width) {
+      const angle = Math.atan2(b[1] - a[1], b[0] - a[0]);
+      const head = 10 * (window.devicePixelRatio || 1);
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.fillStyle = color;
+      ctx.lineWidth = width;
+      ctx.beginPath();
+      ctx.moveTo(a[0], a[1]);
+      ctx.lineTo(b[0], b[1]);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(b[0], b[1]);
+      ctx.lineTo(b[0] - head * Math.cos(angle - Math.PI / 7), b[1] - head * Math.sin(angle - Math.PI / 7));
+      ctx.lineTo(b[0] - head * Math.cos(angle + Math.PI / 7), b[1] - head * Math.sin(angle + Math.PI / 7));
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+
+    function drawText2d(ctx, text, x, y, color = "#172018", size = 12, align = "left") {
+      ctx.save();
+      ctx.fillStyle = color;
+      ctx.font = `${size * (window.devicePixelRatio || 1)}px Inter, Segoe UI, sans-serif`;
+      ctx.textAlign = align;
+      ctx.textBaseline = "middle";
+      ctx.fillText(text, x, y);
+      ctx.restore();
+    }
+
+    function sideMapper(canvas) {
+      const { width, height, dpr } = resizeCanvas(canvas);
+      const margin = 34 * dpr;
+      const yMin = -45;
+      const yMax = 305;
+      const zMin = -235;
+      const zMax = -35;
+      const sx = (width - margin * 2) / (yMax - yMin);
+      const sy = (height - margin * 2) / (zMax - zMin);
+      const scale = Math.min(sx, sy);
+      const ox = margin + yMax * scale + (width - margin * 2 - (yMax - yMin) * scale) / 2;
+      const oy = margin + zMax * scale + (height - margin * 2 - (zMax - zMin) * scale) / 2;
+      return {
+        width, height, dpr, scale,
+        toScreen(p) {
+          return [ox - p[1] * scale, oy - p[2] * scale];
+        },
+        fToX(f) {
+          return ox - f * scale;
+        },
+        zToY(z) {
+          return oy - z * scale;
+        }
+      };
+    }
+
+    function drawSideSlice() {
+      const ctx = elements.slice.getContext("2d");
+      const map = sideMapper(elements.slice);
+      const e = evaluateAll();
+      const model = e.model;
+      ctx.clearRect(0, 0, map.width, map.height);
+      ctx.fillStyle = "#fcfdfb";
+      ctx.fillRect(0, 0, map.width, map.height);
+
+      ctx.save();
+      ctx.strokeStyle = "#e5eae2";
+      ctx.lineWidth = map.dpr;
+      for (let f = 0; f <= 300; f += 100) {
+        ctx.beginPath();
+        ctx.moveTo(map.fToX(f), map.zToY(-225));
+        ctx.lineTo(map.fToX(f), map.zToY(-45));
+        ctx.stroke();
+        drawText2d(ctx, String(f), map.fToX(f), map.zToY(-232), "#5c6d5f", 10, "center");
+      }
+      for (let z = -225; z <= -50; z += 25) {
+        ctx.beginPath();
+        ctx.moveTo(map.fToX(-35), map.zToY(z));
+        ctx.lineTo(map.fToX(305), map.zToY(z));
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      const axisBase = map.toScreen([0, 0, -214]);
+      drawArrow(ctx, axisBase, [axisBase[0], map.zToY(-162)], "#286b9f", 2.2 * map.dpr);
+      drawArrow(ctx, axisBase, [map.fToX(96), axisBase[1]], "#287a44", 2.2 * map.dpr);
+      drawText2d(ctx, "+Z", axisBase[0] + 8 * map.dpr, map.zToY(-160), "#286b9f", 11);
+      drawText2d(ctx, "into gripper", map.fToX(98), axisBase[1] - 12 * map.dpr, "#287a44", 11, "right");
+
+      const leftRay = rotateYZ(model.optical, -constants.d405VFov / 2);
+      const rightRay = rotateYZ(model.optical, constants.d405VFov / 2);
+      const o = map.toScreen(model.origin);
+      const edgeA = map.toScreen(add(model.origin, mul(leftRay, 260)));
+      const edgeB = map.toScreen(add(model.origin, mul(rightRay, 260)));
+      ctx.save();
+      ctx.fillStyle = "rgba(143, 192, 230, 0.22)";
+      ctx.strokeStyle = "rgba(40, 107, 159, 0.55)";
+      ctx.lineWidth = 1.8 * map.dpr;
+      ctx.beginPath();
+      ctx.moveTo(o[0], o[1]);
+      ctx.lineTo(edgeA[0], edgeA[1]);
+      ctx.lineTo(edgeB[0], edgeB[1]);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+
+      const minDepth = map.toScreen(add(model.origin, mul(model.optical, constants.d405MinDepth)));
+      ctx.save();
+      ctx.strokeStyle = "#a86615";
+      ctx.setLineDash([5 * map.dpr, 4 * map.dpr]);
+      ctx.lineWidth = 1.5 * map.dpr;
+      ctx.beginPath();
+      ctx.moveTo(minDepth[0] - 18 * map.dpr, minDepth[1] - 18 * map.dpr);
+      ctx.lineTo(minDepth[0] + 18 * map.dpr, minDepth[1] + 18 * map.dpr);
+      ctx.moveTo(minDepth[0] - 18 * map.dpr, minDepth[1] + 18 * map.dpr);
+      ctx.lineTo(minDepth[0] + 18 * map.dpr, minDepth[1] - 18 * map.dpr);
+      ctx.stroke();
+      ctx.restore();
+
+      const saddle = map.toScreen(model.anchor);
+      const saddleBack = map.toScreen(add(model.anchor, [0, 34, -34]));
+      ctx.save();
+      ctx.fillStyle = "#77776d";
+      ctx.strokeStyle = "#555950";
+      ctx.lineWidth = 1.5 * map.dpr;
+      ctx.fillRect(saddleBack[0], saddleBack[1], saddle[0] - saddleBack[0], map.zToY(model.anchor[2] + 8) - saddleBack[1]);
+      ctx.strokeRect(saddleBack[0], saddleBack[1], saddle[0] - saddleBack[0], map.zToY(model.anchor[2] + 8) - saddleBack[1]);
+      ctx.restore();
+
+      if (state.offset > 0) {
+        const a = map.toScreen(model.anchor);
+        const b = map.toScreen(model.p0);
+        ctx.save();
+        ctx.strokeStyle = "#a86615";
+        ctx.lineWidth = 5 * map.dpr;
+        ctx.beginPath();
+        ctx.moveTo(a[0], a[1]);
+        ctx.lineTo(b[0], b[1]);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      const p0 = map.toScreen(model.p0);
+      const p1 = map.toScreen(add(model.p0, mul(model.t, constants.lowerLength)));
+      const p2 = map.toScreen(add(add(model.p0, mul(model.t, constants.lowerLength)), mul(model.n, constants.lowerThick)));
+      const p3 = map.toScreen(add(model.p0, mul(model.n, constants.lowerThick)));
+      ctx.save();
+      ctx.fillStyle = "#6f6b5f";
+      ctx.strokeStyle = "#4e5049";
+      ctx.lineWidth = 1.5 * map.dpr;
+      ctx.beginPath();
+      ctx.moveTo(p0[0], p0[1]);
+      ctx.lineTo(p1[0], p1[1]);
+      ctx.lineTo(p2[0], p2[1]);
+      ctx.lineTo(p3[0], p3[1]);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+
+      const axisEnd = map.toScreen(add(model.origin, mul(model.optical, 120)));
+      drawArrow(ctx, o, axisEnd, "#287a44", 2.4 * map.dpr);
+      drawText2d(ctx, "D405 optical axis", axisEnd[0] - 8 * map.dpr, axisEnd[1] - 12 * map.dpr, "#287a44", 11, "right");
+
+      for (const [label, point, kind] of allTargetEntries(state.grip)) {
+        const s = map.toScreen(point);
+        const vis = visibility(point, model);
+        ctx.save();
+        ctx.fillStyle = vis.visible ? (kind === "pinch" ? "#287a44" : "#1d1d1d") : "#a1362b";
+        if (kind === "object") {
+          ctx.fillRect(s[0] - 3.5 * map.dpr, s[1] - 3.5 * map.dpr, 7 * map.dpr, 7 * map.dpr);
+        } else {
+          ctx.beginPath();
+          ctx.arc(s[0], s[1], 4.2 * map.dpr, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+
+      drawText2d(ctx, `vertical margin ${fmt(e.verticalMargin)} deg`, map.width - 12 * map.dpr, 18 * map.dpr, e.verticalMargin >= 4 ? "#287a44" : "#a86615", 12, "right");
+      drawText2d(ctx, `worst target angle ${fmt(e.maxAbsVertical)} deg of +/-29 deg`, map.width - 12 * map.dpr, 36 * map.dpr, "#5c6d5f", 11, "right");
+    }
+
+    function metricClass(value, good, warn) {
+      if (value >= good) return "good";
+      if (value >= warn) return "warn";
+      return "bad";
+    }
+
+    function updateMetrics() {
+      const e = evaluateAll();
+      elements.visibilityPill.textContent = `${fmt(e.visiblePct, 0)}% visible`;
+      elements.marginPill.textContent = `${fmt(e.verticalMargin)} deg FOV margin`;
+      elements.depthPill.textContent = `${fmt(e.worstDepthMargin)} mm depth margin`;
+
+      const rows = [
+        {
+          name: "Important points visible",
+          value: `${fmt(e.visiblePct, 0)}%`,
+          cls: e.visiblePct >= 100 ? "good" : e.visiblePct >= 90 ? "warn" : "bad",
+          badge: e.visiblePct >= 100 ? "all visible" : "edge risk",
+          help: "Checks finger pads, pinch, and object points 50/100/150 mm ahead across open, mid, and closed poses."
+        },
+        {
+          name: "Vertical FOV margin",
+          value: `${fmt(e.verticalMargin)} deg`,
+          cls: metricClass(e.verticalMargin, 4, 1),
+          badge: e.verticalMargin >= 4 ? "practical margin" : e.verticalMargin >= 1 ? "tight" : "too close",
+          help: "D405 vertical half-FOV is +/-29 deg. The 35 deg design gets too close to this boundary."
+        },
+        {
+          name: "Minimum depth margin",
+          value: `${fmt(e.worstDepthMargin)} mm`,
+          cls: metricClass(e.worstDepthMargin, 24, 12),
+          badge: e.worstDepthMargin >= 24 ? "comfortable" : e.worstDepthMargin >= 12 ? "tight" : "too close",
+          help: "D405 depth starts around 70 mm. This is the nearest target's room above that limit."
+        },
+        {
+          name: "Pinch point depth",
+          value: `${fmt(e.pinchDepth)} mm`,
+          cls: e.pinchDepth >= 90 && e.pinchDepth <= 180 ? "good" : "warn",
+          badge: e.pinchDepth >= 90 && e.pinchDepth <= 180 ? "close manipulation view" : "check range",
+          help: "The pinch remains close enough for manipulation while leaving room for depth noise and motion."
+        },
+        {
+          name: "Landscape width at pinch",
+          value: `${fmt(e.wideSpan)} mm`,
+          cls: e.wideSpan >= 150 ? "good" : e.wideSpan >= 100 ? "warn" : "bad",
+          badge: e.wideSpan >= 150 ? "spans 2F-85" : "narrow",
+          help: "The 87 deg wide axis gives lateral margin around the 85 mm gripper opening."
+        }
+      ];
+
+      elements.metrics.innerHTML = rows.map(row => `
+        <section class="metric ${row.cls}">
+          <div class="metric-top">
+            <div class="metric-name">${row.name}</div>
+            <div class="metric-value">${row.value}</div>
+          </div>
+          <div class="badge">${row.badge}</div>
+          <p class="subtle">${row.help}</p>
+        </section>
+      `).join("");
+    }
+
+    function updateCandidateRows() {
+      elements.candidateRows.innerHTML = sweepRows.map(row => {
+        const active = Math.abs(row.pitch - state.pitch) < 0.26 &&
+          Math.abs(row.station - state.station) < 0.26 &&
+          Math.abs(row.offset - state.offset) < 0.26;
+        return `
+          <tr class="${active ? "current" : ""}">
+            <td>${row.label}</td>
+            <td class="num">${fmt(row.score)}%</td>
+            <td class="num">${fmt(row.maxAngle)} deg</td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    function syncInputs() {
+      elements.pitch.value = state.pitch;
+      elements.station.value = state.station;
+      elements.offset.value = state.offset;
+      elements.grip.value = state.grip;
+      elements.pitchValue.textContent = `${fmt(state.pitch)} deg`;
+      elements.stationValue.textContent = `${fmt(state.station)} mm`;
+      elements.offsetValue.textContent = `${fmt(state.offset)} mm`;
+      elements.gripValue.textContent = `${Number(state.grip).toFixed(2)} rad`;
+      elements.showFov.checked = state.showFov;
+      elements.showTargets.checked = state.showTargets;
+      elements.showLabels.checked = state.showLabels;
+      elements.showAllPoses.checked = state.showAllPoses;
+      document.querySelectorAll(".preset").forEach(button => {
+        const preset = presets.find(p => p.id === button.dataset.preset);
+        const active = preset &&
+          Math.abs(preset.pitch - state.pitch) < 0.001 &&
+          Math.abs(preset.station - state.station) < 0.001 &&
+          Math.abs(preset.offset - state.offset) < 0.001;
+        button.classList.toggle("active", active);
+      });
+    }
+
+    function render() {
+      syncInputs();
+      updateMetrics();
+      updateCandidateRows();
+      buildScene();
+      drawSideSlice();
+    }
+
+    function buildPresets() {
+      elements.presetList.innerHTML = presets.map(preset => `
+        <button class="preset" data-preset="${preset.id}" type="button">
+          <strong>${preset.name}</strong>
+          <span>${preset.caption}</span>
+        </button>
+      `).join("");
+      elements.presetList.querySelectorAll(".preset").forEach(button => {
+        button.addEventListener("click", () => {
+          const preset = presets.find(p => p.id === button.dataset.preset);
+          Object.assign(state, {
+            pitch: preset.pitch,
+            station: preset.station,
+            offset: preset.offset
+          });
+          render();
+        });
+      });
+    }
+
+    function bindEvents() {
+      elements.pitch.addEventListener("input", () => { state.pitch = Number(elements.pitch.value); render(); });
+      elements.station.addEventListener("input", () => { state.station = Number(elements.station.value); render(); });
+      elements.offset.addEventListener("input", () => { state.offset = Number(elements.offset.value); render(); });
+      elements.grip.addEventListener("input", () => { state.grip = Number(elements.grip.value); render(); });
+      elements.showFov.addEventListener("change", () => { state.showFov = elements.showFov.checked; render(); });
+      elements.showTargets.addEventListener("change", () => { state.showTargets = elements.showTargets.checked; render(); });
+      elements.showLabels.addEventListener("change", () => { state.showLabels = elements.showLabels.checked; render(); });
+      elements.showAllPoses.addEventListener("change", () => { state.showAllPoses = elements.showAllPoses.checked; render(); });
+      window.addEventListener("resize", () => {
+        renderThreeFrame();
+        drawSideSlice();
+      });
+    }
+
+    buildPresets();
+    bindEvents();
+    render();
+  </script>
+</body>
+</html>
