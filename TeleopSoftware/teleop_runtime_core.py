@@ -162,10 +162,9 @@ def process_spark_mode(
     if ros_data[arm.lower() + "_change_mode"] is True:
         runtime_state.homes[arm] = _spark_home_offset(arm)
         dq = [a - u + h for a, u, h in zip(angles, URs.getActualQ(arm), runtime_state.homes[arm])]
-        if dq[0] > np.pi:
-            runtime_state.homes[arm][0] = -2 * np.pi
-        elif dq[0] < -np.pi:
-            runtime_state.homes[arm][0] = +2 * np.pi
+        # Choose an equivalent base winding without discarding its calibrated
+        # offset. Replacing the offset by +/-2pi adds a calibration-sized error.
+        runtime_state.homes[arm][0] -= 2 * np.pi * round(dq[0] / (2 * np.pi))
         ros_data[arm.lower() + "_change_mode"] = False
 
     angles = [angle + runtime_state.homes[arm][i] for i, angle in enumerate(angles)]
