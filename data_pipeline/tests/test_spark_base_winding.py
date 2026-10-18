@@ -27,6 +27,7 @@ class SparkBaseWindingTest(unittest.TestCase):
             for turns in (-3, -1, 0, 1, 4):
                 with self.subTest(arm=arm, turns=turns):
                     robot = Mock()
+                    robot.spark_osc = None
                     robot.has_receive.return_value = True
                     robot.getActualQ.return_value = actual.tolist()
                     robot.gripper_enabled.return_value = False

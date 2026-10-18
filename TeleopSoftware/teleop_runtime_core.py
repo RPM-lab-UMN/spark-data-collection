@@ -9,6 +9,7 @@ from geometry_msgs.msg import PoseStamped, WrenchStamped
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Float32MultiArray, Float32, Bool, Int32
 from UR.fk import forward_6
+from spark_alignment import SparkStartGate, alignment_text, joint_alignment
 
 JOINT_NAMES = [f"joint_{idx}" for idx in range(1, 7)]
 THUNDER_OFFSET = [
@@ -35,6 +36,7 @@ LIGHTNING_OFFSET = [
 class TeleopRuntimeState:
     homes: dict[str, list[float]] = field(default_factory=dict)
     spark_enable: dict[str, bool] = field(default_factory=dict)
+    spark_start_gates: dict[str, SparkStartGate] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -152,6 +154,9 @@ def process_spark_mode(
     servo: SparkServoConfig,
 ) -> None:
     spark_key = arm.lower() + "_spark_angle"
+    gate = runtime_state.spark_start_gates.setdefault(arm, SparkStartGate())
+    if ros_data.get(arm.lower() + "_change_mode"):
+        gate = runtime_state.spark_start_gates[arm] = SparkStartGate()
     if spark_key not in ros_data:
         return
     if not URs.has_receive(arm):
@@ -159,9 +164,25 @@ def process_spark_mode(
         return
 
     angles = ros_data[spark_key]
+    ur_Q = URs.getActualQ(arm)
+    try:
+        if len(angles) != 7 or not np.isfinite(angles).all():
+            raise ValueError("Invalid Spark angles")
+        # Validate before base winding calls round(). Use the same robot
+        # reading for winding selection, the display and the start check.
+        joint_alignment(angles[:6], ur_Q)
+    except (ValueError, TypeError):
+        gate.update(True, False, valid=False)
+        if runtime_state.spark_enable.get(arm, False):
+            URs.stop(arm)
+        runtime_state.spark_enable[arm] = False
+        ros_data.pop(spark_key, None)
+        if "Spark_alignment" in fields[arm]:
+            fields[arm]["Spark_alignment"].config(text="BLOCKED: invalid joint target/state", foreground="red")
+        return
     if ros_data[arm.lower() + "_change_mode"] is True:
         runtime_state.homes[arm] = _spark_home_offset(arm)
-        dq = [a - u + h for a, u, h in zip(angles, URs.getActualQ(arm), runtime_state.homes[arm])]
+        dq = [a - u + h for a, u, h in zip(angles, ur_Q, runtime_state.homes[arm])]
         # Choose an equivalent base winding without discarding its calibrated
         # offset. Replacing the offset by +/-2pi adds a calibration-sized error.
         runtime_state.homes[arm][0] -= 2 * np.pi * round(dq[0] / (2 * np.pi))
@@ -170,7 +191,11 @@ def process_spark_mode(
     angles = [angle + runtime_state.homes[arm][i] for i, angle in enumerate(angles)]
     gripper = _spark_gripper_command(arm, angles[6])
 
-    ur_Q = URs.getActualQ(arm)
+    _, aligned = joint_alignment(angles[:6], ur_Q)
+    status = "READY: joint angles aligned" if aligned else "BLOCKED: joint angles differ"
+    if "Spark_alignment" in fields[arm]:
+        fields[arm]["Spark_alignment"].config(
+            text=alignment_text(angles[:6], ur_Q, status), foreground="darkgreen" if aligned else "red")
     ur_pos = forward_6(ur_Q)[0]
     spark_pos = forward_6(angles[:6])[0]
     height, width, center = fields[arm]["hwc"]
@@ -200,6 +225,23 @@ def process_spark_mode(
         if enable_topic in ros_data:
             old_spark_enable = runtime_state.spark_enable[arm] if arm in runtime_state.spark_enable else False
             runtime_state.spark_enable[arm] = ros_data[enable_topic]
+            if control_modes[arm] == "Spark":
+                requested = gate.update(bool(ros_data[enable_topic]), aligned)
+                runtime_state.spark_enable[arm] = requested
+                if old_spark_enable and not requested:
+                    URs.stop(arm)
+                if gate.active:
+                    status = "ACTIVE: release pedal to stop"
+                elif gate.blocked_until_release:
+                    status = "BLOCKED: align joints, release pedal, then press again"
+                elif not aligned:
+                    status = "BLOCKED: joint angles differ"
+                else:
+                    status = "READY: joint angles aligned; press pedal to engage"
+                if "Spark_alignment" in fields[arm]:
+                    fields[arm]["Spark_alignment"].config(
+                        text=alignment_text(angles[:6], ur_Q, status),
+                        foreground="darkgreen" if gate.active or (aligned and not gate.blocked_until_release) else "red")
             if runtime_state.spark_enable[arm] is True:
                 if old_spark_enable is False:
                     URs.zeroFtSensor(arm)

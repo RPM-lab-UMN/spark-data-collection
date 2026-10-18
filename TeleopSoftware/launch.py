@@ -58,7 +58,7 @@ class GUI(Node):
         # make the grid cells expand to fill the window
         for i in range(2):
             root.grid_columnconfigure(i, weight=1)
-        root.geometry("1600x800")
+        root.geometry("1600x950")
         # Split into two columns one for each robotic arm:
         # The window should be split down the middle with one arm on each side.
         fields = {}
@@ -125,6 +125,9 @@ class GUI(Node):
                 if arm not in control_modes:
                     print(f"{arm} not ready")
                     return
+                if runtime_state.spark_enable.get(arm, False):
+                    URs.stop(arm)
+                    runtime_state.spark_enable[arm] = False
                 for button in fields[arm]['run_buttons']:
                     button.config(bg=col[arm])
 
@@ -143,6 +146,11 @@ class GUI(Node):
                     self.ros_data[arm.lower() + '_change_mode'] = True
                     fields[arm][mode+"_run"].config(bg='orange')
                 print(f"{arm}: Run {mode} - {control_modes[arm]}")
+                fields[arm]['Spark_alignment'].config(
+                    text='BLOCKED: checking joint angles'
+                    if control_modes[arm] == 'Spark' else 'STOPPED: Run Spark disabled',
+                    foreground='red')
+
 
                 if mode == "Optimization":
                     if control_modes[arm] == mode:
@@ -174,12 +182,17 @@ class GUI(Node):
             fields[arms[i]]['Optimization_run'] = run_opt
             fields[arms[i]]['run_buttons'].append(run_opt)
 
+            fields[arms[i]]['Spark_alignment'] = tk.Label(
+                fields[arms[i]]['Spark'], text='BLOCKED: select Run Spark to check joint alignment',
+                font='TkFixedFont', justify='left', anchor='w', foreground='red')
+            fields[arms[i]]['Spark_alignment'].grid(row=1, column=0, columnspan=2, sticky='w')
+
             # Canvas for the Spark plot
             fields[arms[i]]["hwc"] = height, width, center
             SparkPlot = tk.Canvas(fields[arms[i]]['Spark'], width=width, height=height)
             fields[arms[i]]["point"] = SparkPlot.create_oval(190, 190, 210, 210, fill="blue")
             SparkPlot.create_oval(center[0]-size, center[1]-size, center[0]+size, center[1]+size, fill="", outline="black", width=5)
-            SparkPlot.grid(row=1, column=0)
+            SparkPlot.grid(row=2, column=0)
             fields[arms[i]]['Spark_plot'] = SparkPlot
 
             # Canvas for the z-depth meter
@@ -187,13 +200,13 @@ class GUI(Node):
             fields[arms[i]]['Spark_z_meter'] = SparkMeter.create_rectangle(meter_padding, 0, meter_width, height, fill="red")
             SparkMeter.create_rectangle(meter_padding, 300-meter_target_height/2, meter_width, 300+meter_target_height/2, outline="black", width=2)
             # fields[arms[i]]['Spark_z_meter'] = SparkMeter.create_rectangle(meter_padding, 300+10, meter_width, 300-10, fill="green")
-            SparkMeter.grid(row=1, column=1)
+            SparkMeter.grid(row=2, column=1)
             fields[arms[i]]['Spark_meter'] = SparkMeter
 
             # Spark Home button:
             ur_home = tk.Button(fields[arms[i]]['Spark'], text="Home Spark",
                     command=partial(home_fun, arms[i], fields, URs, col, homes, control_modes, "Spark"))
-            ur_home.grid(row=2, column=0)
+            ur_home.grid(row=3, column=0)
             fields[arms[i]]['Spark_home'] = ur_home
 
             # Optimization ----------------------------------------------------------------------------------------------------------
