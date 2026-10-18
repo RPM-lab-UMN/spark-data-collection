@@ -3,7 +3,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
-START_TOLERANCE_RAD = np.deg2rad(5.0)
+START_TOLERANCE_DEG = 15.0
+START_TOLERANCE_RAD = np.deg2rad(START_TOLERANCE_DEG)
 JOINT_LABELS = ("Base", "Shoulder", "Elbow", "Wrist 1", "Wrist 2", "Wrist 3")
 
 
@@ -24,7 +25,7 @@ def alignment_text(target, actual, status):
     rows = [status, "Degrees " + "".join(f"{name:>9}" for name in JOINT_LABELS)]
     for label, values in (("Robot", actual), ("Spark", target), ("Error", error)):
         rows.append(f"{label:<8}" + "".join(f"{v:9.1f}" for v in np.rad2deg(values)))
-    rows.append("Start requires every joint within 5 degrees, then a fresh pedal press.")
+    rows.append(f"Start requires every joint within {START_TOLERANCE_DEG:g} degrees, then a fresh pedal press.")
     return "\n".join(rows)
 
 

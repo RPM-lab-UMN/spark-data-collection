@@ -84,7 +84,7 @@ class SparkAlignmentChecks:
     def test_each_other_joint_mismatch_blocks_start(self):
         for joint in range(1, 6):
             self.setUp()
-            target = self.q.copy(); target[joint] += np.deg2rad(10)
+            target = self.q.copy(); target[joint] += np.deg2rad(20)
             self.update(target)
             self.update(target, enabled=True)
             self.robot.servoJ.assert_not_called()
@@ -134,7 +134,7 @@ class SparkAlignmentChecks:
         self.update()
         self.update(enabled=True)
         self.update(enabled=False)
-        target = self.q.copy(); target[0] += np.deg2rad(10)
+        target = self.q.copy(); target[0] += np.deg2rad(20)
         self.update(target, enabled=True)
         self.assertEqual(self.robot.servoJ.call_count, 1)
         self.robot.stop.assert_called_once_with(self.arm)
@@ -142,7 +142,7 @@ class SparkAlignmentChecks:
     def test_start_check_does_not_change_tracking_targets_after_engagement(self):
         self.update()
         self.update(enabled=True)
-        target = self.q.copy(); target[0] += np.deg2rad(10)
+        target = self.q.copy(); target[0] += np.deg2rad(20)
         self.update(target, enabled=True)
         self.assertEqual(self.robot.servoJ.call_count, 2)
         np.testing.assert_allclose(self.robot.servoJ.call_args.args[1][0], target)
@@ -150,10 +150,19 @@ class SparkAlignmentChecks:
     def test_all_joints_must_meet_start_tolerance(self):
         for joint in range(6):
             for sign in (-1, 1):
-                target = self.q.copy(); target[joint] += sign*np.deg2rad(4.9)
+                target = self.q.copy(); target[joint] += sign*np.deg2rad(14.9)
                 self.assertTrue(joint_alignment(target, self.q)[1])
-                target[joint] = self.q[joint]+sign*np.deg2rad(5.1)
+                target[joint] = self.q[joint]+sign*np.deg2rad(15.1)
                 self.assertFalse(joint_alignment(target, self.q)[1])
+
+    def test_start_with_all_joints_just_inside_fifteen_degrees(self):
+        target = self.q + np.deg2rad([14.9, -14.9, 14.9, -14.9, 14.9, -14.9])
+        self.update(target)
+        self.update(target, enabled=True)
+        self.robot.servoJ.assert_called_once()
+        np.testing.assert_allclose(self.robot.servoJ.call_args.args[1][0], target)
+        text = self.fields[self.arm]['Spark_alignment'].config.call_args.kwargs['text']
+        self.assertIn('within 15 degrees', text)
 
 
 class ThunderAlignmentTest(SparkAlignmentChecks, unittest.TestCase):
