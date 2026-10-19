@@ -192,7 +192,7 @@ def process_spark_mode(
     gripper = _spark_gripper_command(arm, angles[6])
 
     _, aligned = joint_alignment(angles[:6], ur_Q)
-    status = "READY: joint angles aligned" if aligned else "BLOCKED: joint angles differ"
+    status = "READY: base, shoulder and elbow aligned" if aligned else "BLOCKED: base, shoulder or elbow differs"
     if "Spark_alignment" in fields[arm]:
         fields[arm]["Spark_alignment"].config(
             text=alignment_text(angles[:6], ur_Q, status), foreground="darkgreen" if aligned else "red")
@@ -233,11 +233,11 @@ def process_spark_mode(
                 if gate.active:
                     status = "ACTIVE: release pedal to stop"
                 elif gate.blocked_until_release:
-                    status = "BLOCKED: align joints, release pedal, then press again"
+                    status = "BLOCKED: align base/shoulder/elbow; release and re-press pedal"
                 elif not aligned:
-                    status = "BLOCKED: joint angles differ"
+                    status = "BLOCKED: base, shoulder or elbow differs"
                 else:
-                    status = "READY: joint angles aligned; press pedal to engage"
+                    status = "READY: base, shoulder and elbow aligned; press pedal"
                 if "Spark_alignment" in fields[arm]:
                     fields[arm]["Spark_alignment"].config(
                         text=alignment_text(angles[:6], ur_Q, status),

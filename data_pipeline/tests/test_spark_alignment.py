@@ -45,17 +45,17 @@ class SparkAlignmentChecks:
             pubs=self.pubs, optimize=Mock(), clock=self.clock,
             servo=SparkServoConfig(.001, .05, 200))
 
-    def test_equal_position_with_full_turn_is_not_joint_aligned(self):
+    def test_full_turn_errors_are_guarded_only_for_base_shoulder_elbow(self):
         for joint in range(6):
             target = self.q.copy(); target[joint] += 2*np.pi
             np.testing.assert_allclose(forward_6(target)[0], forward_6(self.q)[0], atol=1e-12)
             error, aligned = joint_alignment(target, self.q)
-            self.assertFalse(aligned)
+            self.assertEqual(aligned, joint >= 3)
             self.assertAlmostEqual(np.rad2deg(error[joint]), 360.)
         self.assertIn('360.0', alignment_text(target, self.q, 'BLOCKED'))
 
     def test_base_mismatch_blocks_command_and_published_command(self):
-        target = self.q.copy(); target[0] += np.deg2rad(30)
+        target = self.q.copy(); target[0] += np.deg2rad(40)
         self.update(target)
         self.update(target, enabled=True)
         self.robot.servoJ.assert_not_called()
@@ -81,13 +81,29 @@ class SparkAlignmentChecks:
         self.assertIn('Robot', text)
         self.assertIn('Spark', text)
 
-    def test_each_other_joint_mismatch_blocks_start(self):
-        for joint in range(1, 6):
+    def test_shoulder_and_elbow_mismatch_block_start(self):
+        for joint in range(1, 3):
             self.setUp()
-            target = self.q.copy(); target[joint] += np.deg2rad(20)
+            target = self.q.copy(); target[joint] += np.deg2rad(40)
             self.update(target)
             self.update(target, enabled=True)
             self.robot.servoJ.assert_not_called()
+
+    def test_wrist_mismatches_allow_start_and_preserve_commanded_angles(self):
+        for joint in range(3, 6):
+            for delta_deg in (-360, -90, 90, 360):
+                with self.subTest(joint=joint, delta_deg=delta_deg):
+                    self.setUp()
+                    target = self.q.copy(); target[joint] += np.deg2rad(delta_deg)
+                    self.update(target)
+                    self.update(target, enabled=True)
+                    self.robot.servoJ.assert_called_once()
+                    np.testing.assert_allclose(self.robot.servoJ.call_args.args[1][0], target)
+                    text = self.fields[self.arm]['Spark_alignment'].config.call_args.kwargs['text']
+                    self.assertIn('Wrist 1', text)
+                    self.assertIn('Wrist 2', text)
+                    self.assertIn('Wrist 3', text)
+                    self.assertIn('Wrists do not block start', text)
 
     def test_full_base_turn_after_preview_blocks_even_when_plot_identical(self):
         self.update()
@@ -96,7 +112,7 @@ class SparkAlignmentChecks:
         self.robot.servoJ.assert_not_called()
 
     def test_correction_while_pedal_held_requires_release_and_repress(self):
-        target = self.q.copy(); target[0] += .5
+        target = self.q.copy(); target[0] += np.deg2rad(40)
         self.update(target)
         self.update(target, enabled=True)
         self.update(enabled=True)
@@ -134,7 +150,7 @@ class SparkAlignmentChecks:
         self.update()
         self.update(enabled=True)
         self.update(enabled=False)
-        target = self.q.copy(); target[0] += np.deg2rad(20)
+        target = self.q.copy(); target[0] += np.deg2rad(40)
         self.update(target, enabled=True)
         self.assertEqual(self.robot.servoJ.call_count, 1)
         self.robot.stop.assert_called_once_with(self.arm)
@@ -142,27 +158,27 @@ class SparkAlignmentChecks:
     def test_start_check_does_not_change_tracking_targets_after_engagement(self):
         self.update()
         self.update(enabled=True)
-        target = self.q.copy(); target[0] += np.deg2rad(20)
+        target = self.q.copy(); target[0] += np.deg2rad(40)
         self.update(target, enabled=True)
         self.assertEqual(self.robot.servoJ.call_count, 2)
         np.testing.assert_allclose(self.robot.servoJ.call_args.args[1][0], target)
 
-    def test_all_joints_must_meet_start_tolerance(self):
-        for joint in range(6):
+    def test_base_shoulder_elbow_must_meet_start_tolerance(self):
+        for joint in range(3):
             for sign in (-1, 1):
-                target = self.q.copy(); target[joint] += sign*np.deg2rad(14.9)
+                target = self.q.copy(); target[joint] += sign*np.deg2rad(29.9)
                 self.assertTrue(joint_alignment(target, self.q)[1])
-                target[joint] = self.q[joint]+sign*np.deg2rad(15.1)
+                target[joint] = self.q[joint]+sign*np.deg2rad(30.1)
                 self.assertFalse(joint_alignment(target, self.q)[1])
 
-    def test_start_with_all_joints_just_inside_fifteen_degrees(self):
-        target = self.q + np.deg2rad([14.9, -14.9, 14.9, -14.9, 14.9, -14.9])
+    def test_start_with_guarded_joints_just_inside_thirty_degrees(self):
+        target = self.q + np.deg2rad([29.9, -29.9, 29.9, 50, -75, 120])
         self.update(target)
         self.update(target, enabled=True)
         self.robot.servoJ.assert_called_once()
         np.testing.assert_allclose(self.robot.servoJ.call_args.args[1][0], target)
         text = self.fields[self.arm]['Spark_alignment'].config.call_args.kwargs['text']
-        self.assertIn('within 15 degrees', text)
+        self.assertIn('within 30 degrees', text)
 
 
 class ThunderAlignmentTest(SparkAlignmentChecks, unittest.TestCase):

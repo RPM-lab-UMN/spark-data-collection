@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-START_TOLERANCE_DEG = 15.0
+START_TOLERANCE_DEG = 30.0
 START_TOLERANCE_RAD = np.deg2rad(START_TOLERANCE_DEG)
 JOINT_LABELS = ("Base", "Shoulder", "Elbow", "Wrist 1", "Wrist 2", "Wrist 3")
 
@@ -14,10 +14,10 @@ def joint_alignment(target, actual):
         raise ValueError("Alignment requires six joint angles")
     if not np.isfinite(target).all() or not np.isfinite(actual).all():
         raise ValueError("Alignment requires finite joint angles")
-    # Compare the exact command, not angles modulo 2pi: a full turn must not
-    # disappear from a joint-space engagement check as it does from the FK plot.
+    # Compare the exact command for the base, shoulder and elbow, not angles
+    # modulo 2pi. Wrist errors remain visible but do not block engagement.
     error = target - actual
-    return error, bool(np.all(np.abs(error) <= START_TOLERANCE_RAD))
+    return error, bool(np.all(np.abs(error[:3]) <= START_TOLERANCE_RAD))
 
 
 def alignment_text(target, actual, status):
@@ -25,7 +25,8 @@ def alignment_text(target, actual, status):
     rows = [status, "Degrees " + "".join(f"{name:>9}" for name in JOINT_LABELS)]
     for label, values in (("Robot", actual), ("Spark", target), ("Error", error)):
         rows.append(f"{label:<8}" + "".join(f"{v:9.1f}" for v in np.rad2deg(values)))
-    rows.append(f"Start requires every joint within {START_TOLERANCE_DEG:g} degrees, then a fresh pedal press.")
+    rows.append(f"Start requires base, shoulder and elbow within {START_TOLERANCE_DEG:g} degrees.")
+    rows.append("Wrists do not block start. Release pedal, then press again.")
     return "\n".join(rows)
 
 
