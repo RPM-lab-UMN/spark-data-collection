@@ -25,6 +25,7 @@ except Exception:  # pragma: no cover - optional runtime dependency
 
 _V4L_DIR = "/dev/v4l/by-id"
 _VIDEO_INDEX0_GLOB = f"{_V4L_DIR}/*-video-index0"
+_USB_DEVICES_DIR = Path("/sys/bus/usb/devices")
 _SERIAL_SUFFIX_PATTERN = re.compile(r"_([^_]+)-video-index\d+$")
 _LOGGER = logging.getLogger(__name__)
 
@@ -185,13 +186,42 @@ def _discover_realsense_sdk() -> list[dict[str, Any]]:
             continue
         seen_serials.add(normalized)
 
-        discovered.append(
-            {
-                "kind": "realsense",
-                "serial_number": serial_number,
-            }
-        )
+        camera = {"kind": "realsense", "serial_number": serial_number}
+        try:
+            physical_port = device.get_info(rs.camera_info.physical_port)
+            usb_serial = _usb_serial_for_physical_port(physical_port)
+            if usb_serial:
+                camera["usb_serial_number"] = usb_serial
+        except Exception:
+            pass  # Some SDK backends do not expose a Linux physical port.
+        discovered.append(camera)
     return discovered
+
+
+def _usb_serial_for_physical_port(physical_port: str) -> str:
+    # RSUSB uses bus-port-address (e.g. 2-1.3-5); sysfs uses bus-port.
+    rsusb_port = re.fullmatch(r"(\d+-\d+(?:\.\d+)*)-\d+", physical_port)
+    if rsusb_port:
+        device_path = _USB_DEVICES_DIR / rsusb_port.group(1)
+    else:
+        device_path = Path(physical_port)
+        if device_path.parent == Path("/dev") and device_path.name.startswith("video"):
+            device_path = Path("/sys/class/video4linux") / device_path.name / "device"
+        if not device_path.is_absolute():
+            return ""
+        device_path = device_path.resolve()
+    for candidate in (device_path, *device_path.parents):
+        if (candidate / "idVendor").is_file():
+            try:
+                return (candidate / "serial").read_text().strip()
+            except (OSError, UnicodeError):
+                return ""
+    return ""
+
+
+def _camera_serials(camera: dict[str, Any]) -> list[str]:
+    return [serial for key in ("serial_number", "usb_serial_number")
+            if (serial := _normalize_serial(camera.get(key)))]
 
 
 def _looks_like_gelsight(path: str, sensor_overrides: dict[str, dict[str, Any]]) -> bool:
@@ -237,7 +267,9 @@ def discover_session_devices(config: dict[str, Any]) -> list[dict[str, Any]]:
     except Exception:
         _LOGGER.warning("RealSense SDK discovery failed; checking V4L devices", exc_info=True)
         realsense_cameras = []
-    seen_serials = {_normalize_serial(camera["serial_number"]) for camera in realsense_cameras}
+    # D405 firmware serials can differ completely from USB descriptor serials.
+    # Associate them through the physical port; keep the SDK serial for capture.
+    seen_serials = {serial for camera in realsense_cameras for serial in _camera_serials(camera)}
     for camera in _discover_realsense_v4l():
         serial_number = _normalize_serial(camera["serial_number"])
         if serial_number not in seen_serials:
@@ -245,8 +277,11 @@ def discover_session_devices(config: dict[str, Any]) -> list[dict[str, Any]]:
             seen_serials.add(serial_number)
     for camera in realsense_cameras:
         serial_number = str(camera.get("serial_number", "")).strip()
-        selection = current_selections.get(_device_key("realsense", serial_number))
+        selection = next((current_selections[("realsense", serial)] for serial in _camera_serials(camera)
+                          if ("realsense", serial) in current_selections), None)
         sensor_name, sensor = _matched_sensor_for_realsense(serial_number, sensor_overrides)
+        if sensor is None and camera.get("usb_serial_number"):
+            sensor_name, sensor = _matched_sensor_for_realsense(camera["usb_serial_number"], sensor_overrides)
         sensor_key = _sensor_key_from_selection_or_sensor(selection=selection, sensor_name=sensor_name, sensor=sensor)
         enabled = selection["enabled"] if selection is not None else _default_enabled(sensor)
         devices.append(

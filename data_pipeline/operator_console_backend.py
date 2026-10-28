@@ -936,6 +936,17 @@ class OperatorConsoleBackend:
     def _realsense_health(self, config: dict[str, Any], live_topics: dict[str, str]) -> dict[str, Any]:
         if not config.get("realsense_enabled", True):
             return {"status": "off", "summary": "RealSense disabled", "details": []}
+        cameras = self._enabled_session_devices(config, "realsense")
+        if not cameras:
+            return {"status": "off", "summary": "No RealSense cameras selected", "details": []}
+        unassigned = [str(camera.get("serial_number", "")) for camera in cameras
+                      if camera_path_parts_for_sensor_key(str(camera.get("sensor_key", "")).strip()) is None]
+        if unassigned:
+            return {
+                "status": "yellow",
+                "summary": "Assign Sensor Keys to selected cameras",
+                "details": ["Missing camera assignment: " + ", ".join(unassigned)],
+            }
         required_topics = [topic for topic in self._realsense_required_topics(config) if topic.endswith("/color/image_raw")]
         return self._build_health_card(
             process_name="realsense_contract",
@@ -1042,6 +1053,12 @@ class OperatorConsoleBackend:
                 "summary": f"{process.display_name} failed",
                 "details": details or [f"Exit code {process.exit_code}"],
             }
+        if not required_topics:
+            return {
+                "status": "yellow",
+                "summary": f"{process.display_name} streams not configured",
+                "details": ["Select devices and assign Sensor Keys before starting."],
+            }
         if missing_topics or dead_sample_topics:
             if process.state == "running" and within_grace:
                 return {
@@ -1068,8 +1085,8 @@ class OperatorConsoleBackend:
             }
         return {
             "status": "yellow",
-            "summary": f"{process.display_name} topics healthy but process unmanaged",
-            "details": [],
+            "summary": f"{process.display_name} topics healthy; publisher outside this console",
+            "details": ["This console does not own the publishing process and cannot stop it."],
         }
 
     def _latest_log_hint(self, process: ManagedProcess) -> str | None:

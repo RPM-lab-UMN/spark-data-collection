@@ -53,6 +53,13 @@ not support the L515. Use `collect` to start the console with the camera runtime
 `--check-realsense` should print a module path under
 `build/librealsense-v2.54.2/Release` and list both the D405 and L515 when connected.
 
+In the console, select the cameras to record and assign each a Sensor Key.
+Discovery matches the SDK and USB identities of each physical camera, since a
+D405's SDK serial can differ from its USB descriptor serial. An unassigned
+camera cannot be checked for topic health. If configured topics are receiving
+messages from a publisher outside this console, its health card explains that
+this console cannot stop that publisher.
+
 The operator should not need to manually:
 
 - source ROS
