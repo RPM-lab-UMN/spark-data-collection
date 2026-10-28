@@ -30,6 +30,29 @@ collect
 
 That command should launch the operator console directly.
 
+### Repair L515 discovery after pulling updates
+
+From your account's `spark-data-collection` checkout, run once:
+
+```bash
+git pull --ff-only
+./data_pipeline/setup_realsense_contract_runtime.sh
+./collect --check-realsense
+./collect
+```
+
+Close any existing operator console before reopening it. The setup script builds
+SDK 2.54.2 with pybind11 2.13.6, which supports the system Python 3.12 and NumPy 2.
+This needs the build dependencies described in [System Setup](./system-setup.md)
+and internet access to fetch the headers. Each account's separate checkout needs
+its own build; compiled files are not included in Git.
+
+`collect` loads that local runtime for discovery and passes it to child processes.
+The installed converter package `pyrealsense2==2.56.5.9235` is separate and does
+not support the L515. Use `collect` to start the console with the camera runtime.
+`--check-realsense` should print a module path under
+`build/librealsense-v2.54.2/Release` and list both the D405 and L515 when connected.
+
 The operator should not need to manually:
 
 - source ROS

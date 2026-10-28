@@ -16,10 +16,14 @@ repo_root="$(resolve_path "${BASH_SOURCE[0]}")"
 ros_setup="/opt/ros/jazzy/setup.bash"
 venv_python="$repo_root/.venv/bin/python"
 console_entry="$repo_root/data_pipeline/operator_console_qt.py"
+realsense_release="$repo_root/build/librealsense-v2.54.2/Release"
 
 if [ "${1-}" = "--help" ] || [ "${1-}" = "-h" ]; then
   cat <<EOF
 Usage: collect [operator-console-args...]
+
+  --check             Show the resolved checkout and runtime paths
+  --check-realsense   Show the loaded SDK and connected RealSense cameras
 
 Launch the Spark operator console from this repository checkout.
 
@@ -27,6 +31,7 @@ This script:
   - resolves the repo root even if invoked through a symlink
   - sources /opt/ros/jazzy/setup.bash
   - runs data_pipeline/operator_console_qt.py with the repo-local .venv
+  - uses the local L515-compatible RealSense runtime when built
 
 Optional PATH setup for any account:
   mkdir -p ~/bin
@@ -43,6 +48,7 @@ if [ "${1-}" = "--check" ]; then
   echo "ros_setup=$ros_setup"
   echo "venv_python=$venv_python"
   echo "console_entry=$console_entry"
+  echo "realsense_release=$realsense_release"
   exit 0
 fi
 
@@ -66,4 +72,32 @@ cd "$repo_root"
 set +u
 source "$ros_setup"
 set -u
+
+# Discovery must use the same L515-compatible SDK as the camera bridge.
+if [[ -d "$realsense_release" ]]; then
+  export PYTHONPATH="$realsense_release${PYTHONPATH:+:$PYTHONPATH}"
+  export LD_LIBRARY_PATH="$realsense_release${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+fi
+
+if [[ "${1-}" = "--check-realsense" ]]; then
+  exec "$venv_python" -u - <<'PY'
+import sys
+import pyrealsense2 as rs
+
+print(f"Python: {sys.executable}")
+print(f"RealSense module: {rs.__file__}")
+try:
+    context = rs.context()
+    devices = list(context.query_devices())
+except RuntimeError as exc:
+    print(f"RealSense enumeration failed: {exc}", file=sys.stderr)
+    print("Check USB permissions and close other camera applications before retrying.", file=sys.stderr)
+    sys.exit(1)
+for device in devices:
+    print(f"{device.get_info(rs.camera_info.name)}: {device.get_info(rs.camera_info.serial_number)}")
+if not devices:
+    print("No RealSense cameras found. Check USB connections and permissions.")
+    sys.exit(1)
+PY
+fi
 exec "$venv_python" "$console_entry" "$@"

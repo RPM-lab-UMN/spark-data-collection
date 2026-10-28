@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import glob
+import logging
 import re
 from pathlib import Path
 from typing import Any
@@ -25,6 +26,9 @@ except Exception:  # pragma: no cover - optional runtime dependency
 _V4L_DIR = "/dev/v4l/by-id"
 _VIDEO_INDEX0_GLOB = f"{_V4L_DIR}/*-video-index0"
 _SERIAL_SUFFIX_PATTERN = re.compile(r"_([^_]+)-video-index\d+$")
+_LOGGER = logging.getLogger(__name__)
+
+
 def _normalize_serial(value: str | None) -> str:
     normalized = str(value or "").strip().strip("'").strip('"').lower()
     if not normalized:
@@ -226,7 +230,19 @@ def discover_session_devices(config: dict[str, Any]) -> list[dict[str, Any]]:
 
     devices: list[dict[str, Any]] = []
 
-    realsense_cameras = _discover_realsense_sdk() or _discover_realsense_v4l()
+    # SDK releases that dropped L515 can still find a D405. Always merge the
+    # Linux camera list rather than treating any SDK result as a complete list.
+    try:
+        realsense_cameras = _discover_realsense_sdk()
+    except Exception:
+        _LOGGER.warning("RealSense SDK discovery failed; checking V4L devices", exc_info=True)
+        realsense_cameras = []
+    seen_serials = {_normalize_serial(camera["serial_number"]) for camera in realsense_cameras}
+    for camera in _discover_realsense_v4l():
+        serial_number = _normalize_serial(camera["serial_number"])
+        if serial_number not in seen_serials:
+            realsense_cameras.append(camera)
+            seen_serials.add(serial_number)
     for camera in realsense_cameras:
         serial_number = str(camera.get("serial_number", "")).strip()
         selection = current_selections.get(_device_key("realsense", serial_number))

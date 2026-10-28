@@ -24,13 +24,24 @@ if ! command -v ros2 >/dev/null 2>&1; then
   exit 1
 fi
 
-if [[ ! -d "${UPSTREAM_LIBREALSENSE_DIR}/.git" ]]; then
-  echo "Missing upstream librealsense checkout at ${UPSTREAM_LIBREALSENSE_DIR}" >&2
-  exit 1
+if [[ ! -d "${WORKTREE_DIR}" ]]; then
+  if ! git -C "${UPSTREAM_LIBREALSENSE_DIR}" rev-parse --git-dir >/dev/null 2>&1; then
+    echo "Missing upstream librealsense checkout at ${UPSTREAM_LIBREALSENSE_DIR}" >&2
+    exit 1
+  fi
+  git -C "${UPSTREAM_LIBREALSENSE_DIR}" worktree add "${WORKTREE_DIR}" v2.54.2
 fi
 
-if [[ ! -d "${WORKTREE_DIR}" ]]; then
-  git -C "${UPSTREAM_LIBREALSENSE_DIR}" worktree add "${WORKTREE_DIR}" v2.54.2
+# The SDK's original pybind11 2.10.3 crashes when imported on Python 3.12.
+# Keep SDK 2.54.2 for L515, but build its bindings with Python/NumPy-compatible headers.
+binding_patch="${ROOT_DIR}/data_pipeline/patches/librealsense-pybind11.patch"
+if git -C "${WORKTREE_DIR}" apply --reverse --check "${binding_patch}" 2>/dev/null; then
+  : # Already patched.
+elif git -C "${WORKTREE_DIR}" apply --check "${binding_patch}"; then
+  git -C "${WORKTREE_DIR}" apply "${binding_patch}"
+else
+  echo "Cannot apply the Python compatibility patch in ${WORKTREE_DIR}" >&2
+  exit 1
 fi
 
 mkdir -p "${BUILD_DIR}"
@@ -49,7 +60,7 @@ cmake \
   -DFORCE_RSUSB_BACKEND=ON \
   -DCMAKE_CXX_FLAGS="-include cstdint"
 
-cmake --build "${BUILD_DIR}" --target pyrealsense2 -j"$(nproc)"
+cmake --build "${BUILD_DIR}" --target pyrealsense2 -j"${REALSENSE_BUILD_JOBS:-4}"
 
 export PYTHONPATH="${RELEASE_DIR}${PYTHONPATH:+:${PYTHONPATH}}"
 export LD_LIBRARY_PATH="${RELEASE_DIR}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
