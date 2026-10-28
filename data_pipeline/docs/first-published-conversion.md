@@ -85,23 +85,33 @@ That keeps one published folder aligned with one conversion contract.
 
 In the operator console, set `Published Folder`.
 
-The value must resolve to a direct child of `published/`.
+Choose one dataset folder. It can live in the repository or on another drive.
+The `Browse` dialog includes shortcuts to `/mnt` and `/mnt/SSDdata`, and you can
+type an absolute path into the `Published Folder` field. Use a dataset-specific
+folder such as `/mnt/SSDdata/srinivas/pick_place_v1`, rather than the whole SSD.
 
 Valid examples:
 
 - `spark_multisensor_lightning_v1`
 - `published/spark_multisensor_lightning_v1`
+- `/mnt/SSDdata/srinivas/spark_multisensor_lightning_v1`
+- `published/experiments/spark_multisensor_lightning_v1`
 
 Invalid examples:
 
 - `published/`
-- `published/foo/bar`
+- `/`
+- a regular file
 
 Why this exists:
 
 - one published folder should represent one coherent dataset contract
 - the converter appends episodes into that dataset root
 - the target must therefore be one specific dataset folder
+
+A short name still defaults to `published/<name>`. Absolute paths are saved as
+absolute paths. `Open Viewer` uses the selected location for dataset files and
+native-depth video; changing drives does not require rebuilding the viewer.
 
 
 ## 4. Check The Converter Card

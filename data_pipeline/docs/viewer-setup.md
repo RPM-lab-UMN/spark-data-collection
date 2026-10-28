@@ -71,6 +71,12 @@ That last check prevents partial viewer builds from being treated as ready when
 
 The operator console still owns viewer startup at runtime.
 
+The published dataset can be stored outside the repository, including on
+`/mnt/SSDdata`. The console serves the chosen dataset's parent directory and
+passes that location to the viewer's native-depth adapter. When switching roots,
+it restarts its viewer services as needed so datasets with the same folder name
+on different drives are not confused.
+
 `Open Viewer` in the operator console:
 
 - checks the current published dataset target

@@ -107,6 +107,7 @@ class OperatorConsoleBackend:
         self.last_action_error = ""
         self.latest_episode_id: str | None = None
         self.latest_dataset_id: str | None = None
+        self.latest_dataset_path: Path | None = None
         self.latest_viewer_url: str | None = None
         self.latest_conversion_output = ""
         self.latest_episode_notes_output = ""
@@ -115,6 +116,7 @@ class OperatorConsoleBackend:
         self.recording_check_running = False
         self.latest_recording_config: dict[str, Any] | None = None
         self.pending_conversion_dataset_id: str | None = None
+        self.pending_conversion_dataset_path: Path | None = None
         self.current_session_capture_plan: dict[str, Any] | None = None
         self.current_session_capture_plan_path: Path | None = None
         self.topic_probe_cache: dict[str, tuple[float, bool]] = {}
@@ -292,26 +294,29 @@ class OperatorConsoleBackend:
         }
 
     def _published_root(self) -> Path:
+        target = self._published_dataset_target_path()
+        if target is not None:
+            return target.parent
         return (REPO_ROOT / "published").resolve()
 
     def _normalize_published_dataset_target(self, target_ref: str) -> Path:
-        published_root = self._published_root()
+        published_root = (REPO_ROOT / "published").resolve()
         ref = str(target_ref).strip()
         if not ref:
             raise ValueError("Published dataset target is empty.")
         candidate = Path(ref).expanduser()
         if candidate.is_absolute():
             target_path = candidate.resolve()
+        elif candidate == Path("published"):
+            target_path = published_root
         elif len(candidate.parts) == 1:
             target_path = (published_root / candidate).resolve()
         else:
             target_path = (REPO_ROOT / candidate).resolve()
-        try:
-            relative = target_path.relative_to(published_root)
-        except ValueError as exc:
-            raise ValueError(f"Published dataset target must live under {published_root}") from exc
-        if len(relative.parts) != 1 or not relative.parts[0]:
-            raise ValueError("Published dataset target must be a direct child of published/.")
+        if target_path in {Path(target_path.anchor), REPO_ROOT.resolve(), published_root}:
+            raise ValueError("Choose a specific dataset folder, such as /mnt/SSDdata/my_dataset.")
+        if target_path.exists() and not target_path.is_dir():
+            raise ValueError(f"Published dataset target is not a directory: {target_path}")
         return target_path
 
     def get_published_dataset_target(self) -> str:
@@ -323,7 +328,7 @@ class OperatorConsoleBackend:
             self._save_local_settings()
             return ""
         target_path = self._normalize_published_dataset_target(target_ref)
-        stored = str(target_path.relative_to(REPO_ROOT))
+        stored = self._stored_path(target_path)
         self.local_settings["published_dataset_target"] = stored
         self._save_local_settings()
         return stored
@@ -493,13 +498,20 @@ class OperatorConsoleBackend:
         if target_path is None:
             self.last_action_error = "Choose a published dataset target before converting."
             return
+        write_parent = target_path
+        while not write_parent.exists() and write_parent.parent != write_parent:
+            write_parent = write_parent.parent
+        if not write_parent.is_dir() or not os.access(write_parent, os.W_OK | os.X_OK):
+            self.last_action_error = f"Published dataset destination is not writable: {target_path}"
+            return
         command = self._build_convert_command(config, self.latest_episode_id, target_path=target_path)
-        self._start_process("converter", command)
         self.pending_conversion_dataset_id = target_path.name
+        self.pending_conversion_dataset_path = target_path
+        self._start_process("converter", command)
         self.latest_conversion_output = ""
         self._record_event(
             "start_conversion",
-            {"episode_id": self.latest_episode_id, "dataset_id": self.pending_conversion_dataset_id},
+            {"episode_id": self.latest_episode_id, "dataset_id": target_path.name, "dataset_path": str(target_path)},
         )
 
     def save_latest_episode_notes(self, note_text: str) -> None:
@@ -535,12 +547,13 @@ class OperatorConsoleBackend:
     def open_viewer(self, config: dict[str, Any]) -> None:
         self.last_action_error = ""
         try:
-            dataset_id, episode_index, url = self._resolve_viewer_target(config)
-            self._ensure_viewer_server(dataset_id)
+            dataset_path, episode_index, url = self._resolve_viewer_target(config)
+            self._ensure_viewer_server(dataset_path)
         except RuntimeError as exc:
             self.last_action_error = str(exc)
             return
-        self.latest_dataset_id = dataset_id
+        self.latest_dataset_id = dataset_path.name
+        self.latest_dataset_path = dataset_path
         self.latest_viewer_url = url
         if not shutil.which("xdg-open"):
             self.last_action_error = "xdg-open is not available on this system."
@@ -592,44 +605,48 @@ class OperatorConsoleBackend:
             self.health_refresh_in_flight = False
 
     def viewer_target_available(self, config: dict[str, Any]) -> bool:
-        return self._find_viewer_dataset_id(config) is not None
+        return self._find_viewer_dataset_path(config) is not None
 
-    def _viewer_dataset_candidates(self, config: dict[str, Any]) -> list[str]:
-        candidates: list[str] = []
+    def _viewer_dataset_candidates(self, config: dict[str, Any]) -> list[Path]:
+        candidates: list[Path] = []
         target_path = self._published_dataset_target_path()
         if target_path is not None:
-            candidates.append(target_path.name)
-        if self.latest_dataset_id and self.latest_dataset_id not in candidates:
-            candidates.append(self.latest_dataset_id)
+            candidates.append(target_path)
+        latest_path = self.latest_dataset_path
+        if latest_path is None and self.latest_dataset_id:
+            latest_path = REPO_ROOT / "published" / self.latest_dataset_id
+        if latest_path is not None and latest_path not in candidates:
+            candidates.append(latest_path)
         return candidates
 
-    def _find_viewer_dataset_id(self, config: dict[str, Any]) -> str | None:
-        for dataset_id in self._viewer_dataset_candidates(config):
-            info_path = REPO_ROOT / "published" / dataset_id / "meta" / "info.json"
+    def _find_viewer_dataset_path(self, config: dict[str, Any]) -> Path | None:
+        for dataset_path in self._viewer_dataset_candidates(config):
+            info_path = dataset_path / "meta" / "info.json"
             if info_path.exists():
-                return dataset_id
+                return dataset_path
         return None
 
-    def _resolve_viewer_target(self, config: dict[str, Any]) -> tuple[str, int, str]:
+    def _resolve_viewer_target(self, config: dict[str, Any]) -> tuple[Path, int, str]:
         viewer_base_url = self._viewer_base_url()
-        dataset_id = self._find_viewer_dataset_id(config)
-        if not dataset_id:
+        dataset_path = self._find_viewer_dataset_path(config)
+        if dataset_path is None:
             checked = [
-                str(REPO_ROOT / "published" / dataset_id / "meta" / "info.json")
-                for dataset_id in self._viewer_dataset_candidates(config)
+                str(path / "meta" / "info.json")
+                for path in self._viewer_dataset_candidates(config)
             ]
             raise RuntimeError(
                 "Published dataset info not found. Checked: "
                 + (", ".join(checked) if checked else "<no dataset id configured>")
             )
-        info_path = REPO_ROOT / "published" / dataset_id / "meta" / "info.json"
+        info_path = dataset_path / "meta" / "info.json"
         with info_path.open("r", encoding="utf-8") as handle:
             info = json.load(handle)
         episode_index = max(int(info.get("total_episodes", 1)) - 1, 0)
+        dataset_id = urllib.parse.quote(dataset_path.name, safe="")
         url = f"{viewer_base_url}/local/{dataset_id}/episode_{episode_index}"
-        return dataset_id, episode_index, url
+        return dataset_path, episode_index, url
 
-    def _build_viewer_server_command(self) -> str:
+    def _build_viewer_server_command(self, published_root: Path | None = None) -> str:
         if not VIEWER_REPO.exists():
             raise RuntimeError(f"Viewer repo not found: {VIEWER_REPO}")
         if not VIEWER_BUN.exists():
@@ -646,7 +663,7 @@ class OperatorConsoleBackend:
             f"PORT={shlex.quote(str(self._viewer_port()))} "
             f"DATASET_URL={shlex.quote(dataset_url)} "
             f"VIDEO_BACKEND_URL={shlex.quote(self._viewer_video_base_url())} "
-            f"LOCAL_DATASET_ROOT={shlex.quote(str(self._published_root()))} "
+            f"LOCAL_DATASET_ROOT={shlex.quote(str(published_root or self._published_root()))} "
             f"{shlex.quote(str(VIEWER_BUN))} start"
         )
 
@@ -665,10 +682,10 @@ class OperatorConsoleBackend:
             f"--port {shlex.quote(str(self._viewer_video_port()))}"
         )
 
-    def _build_dataset_server_command(self) -> str:
+    def _build_dataset_server_command(self, published_root: Path | None = None) -> str:
         return (
             f"{shlex.quote(SYSTEM_PYTHON)} {shlex.quote(str(DATASET_SERVER_PY))} "
-            f"--root {shlex.quote(str(self._published_root()))} "
+            f"--root {shlex.quote(str(published_root or self._published_root()))} "
             "--host 127.0.0.1 "
             f"--port {shlex.quote(str(self._dataset_port()))}"
         )
@@ -714,11 +731,9 @@ class OperatorConsoleBackend:
     def _viewer_video_port(self) -> int:
         return self._port_from_base_url(self._viewer_video_base_url())
 
-    def _viewer_dataset_root(self, dataset_id: str) -> Path:
-        return REPO_ROOT / "published" / dataset_id
-
     def _dataset_info_url(self, dataset_id: str) -> str:
-        return f"{self._dataset_base_url()}/datasets/local/{dataset_id}/resolve/main/meta/info.json"
+        encoded_id = urllib.parse.quote(dataset_id, safe="")
+        return f"{self._dataset_base_url()}/datasets/local/{encoded_id}/resolve/main/meta/info.json"
 
     def _listener_pid(self, port: int, cwd_hint: Path) -> int | None:
         try:
@@ -763,6 +778,21 @@ class OperatorConsoleBackend:
         except ProcessLookupError:
             return
 
+    def _listener_dataset_root(self, pid: int, process_name: str) -> Path | None:
+        try:
+            if process_name == "dataset_server":
+                args = Path(f"/proc/{pid}/cmdline").read_bytes().decode().split("\0")
+                index = args.index("--root")
+                return Path(args[index + 1]).resolve()
+            if process_name == "viewer_server":
+                environment = Path(f"/proc/{pid}/environ").read_bytes().decode().split("\0")
+                for entry in environment:
+                    if entry.startswith("LOCAL_DATASET_ROOT="):
+                        return Path(entry.partition("=")[2]).resolve()
+        except (OSError, UnicodeError, ValueError, IndexError):
+            pass
+        return None
+
     def _ensure_managed_http_server(
         self,
         *,
@@ -772,6 +802,7 @@ class OperatorConsoleBackend:
         port: int,
         cwd_hint: Path,
         timeout_s: float,
+        published_root: Path | None = None,
     ) -> None:
         process = self.processes[process_name]
         process_running = process.process is not None and process.process.poll() is None
@@ -791,8 +822,15 @@ class OperatorConsoleBackend:
         if self._url_reachable(url, timeout_s=1.5):
             listener_pid = self._listener_pid(port, cwd_hint)
             if listener_pid is not None:
-                return
-            raise RuntimeError(f"Port {port} is already serving {url} from an unmanaged process.")
+                if published_root is None:
+                    return
+                listener_root = self._listener_dataset_root(listener_pid, process_name)
+                if listener_root == published_root.resolve():
+                    return
+                if listener_root is None:
+                    raise RuntimeError(f"Cannot verify the existing {process.display_name} dataset folder. Stop the previous viewer and retry.")
+            else:
+                raise RuntimeError(f"Port {port} is already serving {url} from an unmanaged process.")
 
         self._stop_existing_listener(port, cwd_hint)
         self._start_process(process_name, command)
@@ -803,19 +841,20 @@ class OperatorConsoleBackend:
             time.sleep(0.25)
         raise RuntimeError(f"{self.processes[process_name].display_name} did not become reachable: {url}")
 
-    def _ensure_dataset_server(self) -> None:
+    def _ensure_dataset_server(self, published_root: Path) -> None:
         self._ensure_managed_http_server(
             process_name="dataset_server",
-            command=self._build_dataset_server_command(),
+            command=self._build_dataset_server_command(published_root),
             url=f"{self._dataset_base_url()}/healthz",
             port=self._dataset_port(),
             cwd_hint=REPO_ROOT,
             timeout_s=10.0,
+            published_root=published_root,
         )
 
-    def _ensure_viewer_server(self, dataset_id: str) -> None:
-        self._ensure_dataset_server()
-        dataset_info_url = self._dataset_info_url(dataset_id)
+    def _ensure_viewer_server(self, dataset_path: Path) -> None:
+        self._ensure_dataset_server(dataset_path.parent)
+        dataset_info_url = self._dataset_info_url(dataset_path.name)
         if not self._url_reachable(dataset_info_url, timeout_s=1.5):
             raise RuntimeError(f"Viewer dataset did not become reachable: {dataset_info_url}")
 
@@ -830,11 +869,12 @@ class OperatorConsoleBackend:
 
         self._ensure_managed_http_server(
             process_name="viewer_server",
-            command=self._build_viewer_server_command(),
+            command=self._build_viewer_server_command(dataset_path.parent),
             url=self._viewer_base_url(),
             port=self._viewer_port(),
             cwd_hint=VIEWER_REPO,
             timeout_s=15.0,
+            published_root=dataset_path.parent,
         )
 
     def _url_reachable(self, url: str, timeout_s: float = 2.0) -> bool:
@@ -1410,16 +1450,19 @@ class OperatorConsoleBackend:
             self.latest_conversion_output = "\n".join(process.get_logs()[-40:])
             if exit_code == 0 and self.pending_conversion_dataset_id:
                 self.latest_dataset_id = self.pending_conversion_dataset_id
+                self.latest_dataset_path = self.pending_conversion_dataset_path
                 self._record_event(
                     "conversion_complete",
                     {
                         "dataset_id": self.pending_conversion_dataset_id,
+                        "dataset_path": str(self.latest_dataset_path),
                         "episode_id": self.latest_episode_id,
                     },
                 )
             elif exit_code != 0:
                 self.last_action_error = "Convert failed."
             self.pending_conversion_dataset_id = None
+            self.pending_conversion_dataset_path = None
         elif name == "recorder":
             if exit_code not in {0, -signal.SIGINT, -signal.SIGTERM, 130, 143}:
                 self.last_action_error = "Recording failed."

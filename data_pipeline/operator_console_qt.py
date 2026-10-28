@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 try:
-    from PySide6.QtCore import QSocketNotifier, QTimer, Qt
+    from PySide6.QtCore import QSocketNotifier, QTimer, Qt, QUrl
     from PySide6.QtWidgets import (
         QAbstractItemView,
         QApplication,
@@ -730,7 +730,7 @@ class OperatorConsoleQtWindow(QMainWindow):
         publish_target_layout.setContentsMargins(0, 0, 0, 0)
         publish_target_layout.setSpacing(8)
         self.published_target_edit = QLineEdit()
-        self.published_target_edit.setPlaceholderText("folder under published/, e.g. new")
+        self.published_target_edit.setPlaceholderText("dataset folder, e.g. /mnt/SSDdata/my_dataset")
         self.published_target_edit.editingFinished.connect(self._save_published_dataset_target)
         self.published_target_edit.textChanged.connect(
             lambda _text: self._update_path_field_tooltip(self.published_target_edit)
@@ -785,13 +785,18 @@ class OperatorConsoleQtWindow(QMainWindow):
             )
         except Exception:
             start_dir = str(self.backend._published_root())
-        path = QFileDialog.getExistingDirectory(
-            self,
-            "Choose Published Folder",
-            start_dir,
-        )
-        if not path:
+        directory = Path(start_dir)
+        while not directory.is_dir() and directory.parent != directory:
+            directory = directory.parent
+        dialog = QFileDialog(self, "Choose Published Dataset Folder", str(directory))
+        dialog.setOption(QFileDialog.Option.DontUseNativeDialog, True)
+        dialog.setFileMode(QFileDialog.FileMode.Directory)
+        dialog.setOption(QFileDialog.Option.ShowDirsOnly, True)
+        shortcuts = [Path.home(), Path("/"), Path("/mnt"), Path("/mnt/SSDdata"), Path("/media")]
+        dialog.setSidebarUrls([QUrl.fromLocalFile(str(path)) for path in shortcuts if path.is_dir()])
+        if not dialog.exec():
             return
+        path = dialog.selectedFiles()[0]
         try:
             stored = self.backend.set_published_dataset_target(path)
         except Exception as exc:
